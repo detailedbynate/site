@@ -4,6 +4,7 @@ import { AnimatePresence } from "motion/react";
 import { Building2, Clock, KeyRound, ShieldCheck } from "lucide-react";
 
 import { getAdminSettings, saveSettings } from "@/lib/api/admin.functions";
+import { TeamCard } from "@/components/admin/TeamCard";
 import { changePassword, getMe, updateProfile } from "@/lib/api/auth.functions";
 import {
   Button,
@@ -242,6 +243,7 @@ function SettingsPage() {
 
         <AccountCard />
         <SecurityCard />
+        <TeamCard />
       </div>
     </>
   );

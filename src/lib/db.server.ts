@@ -951,3 +951,45 @@ export async function importClients(
     return { created, updated };
   });
 }
+
+export async function updateUserRole(userId: string, role: UserRole): Promise<User | undefined> {
+  return withWriteLock(async (db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) return undefined;
+    // Never leave the shop without an owner — that would lock everyone out
+    // of team management permanently.
+    if (user.role === "owner" && role !== "owner") {
+      const owners = db.users.filter((u) => u.role === "owner").length;
+      if (owners <= 1) throw new Error("There must be at least one owner.");
+    }
+    user.role = role;
+    return user;
+  });
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await withWriteLock(async (db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) return;
+    if (user.role === "owner" && db.users.filter((u) => u.role === "owner").length <= 1) {
+      throw new Error("You can't remove the last owner.");
+    }
+    db.users = db.users.filter((u) => u.id !== userId);
+    // Sign them out everywhere immediately.
+    db.sessions = db.sessions.filter((s) => s.userId !== userId);
+  });
+}
+
+export async function adminSetUserPassword(
+  userId: string,
+  passwordHash: string,
+  passwordSalt: string,
+): Promise<void> {
+  await withWriteLock(async (db) => {
+    const user = db.users.find((u) => u.id === userId);
+    if (!user) return;
+    user.passwordHash = passwordHash;
+    user.passwordSalt = passwordSalt;
+    db.sessions = db.sessions.filter((s) => s.userId !== userId);
+  });
+}

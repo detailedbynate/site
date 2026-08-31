@@ -134,7 +134,7 @@ function AdminLayout() {
 
   const sidebar = (
     <div className="flex h-full flex-col p-3">
-      <div className={`mb-6 flex items-center gap-2.5 px-1.5 pt-1 ${collapsed ? "justify-center" : ""}`}>
+      <div className={`mb-4 flex items-center gap-2.5 px-1.5 pr-8 pt-1 ${collapsed ? "justify-center pr-1.5" : ""}`}>
         <span
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
           style={{ backgroundImage: "var(--gradient-brand)" }}
@@ -155,7 +155,7 @@ function AdminLayout() {
       {NAV.map((group, gi) => (
         <div key={gi} className="mb-1">
           {group.heading && !collapsed && (
-            <p className="mb-1.5 mt-5 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">
+            <p className="mb-1 mt-4 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">
               {group.heading}
             </p>
           )}
@@ -174,7 +174,7 @@ function AdminLayout() {
               >
                 <motion.div
                   whileTap={{ scale: 0.985 }}
-                  className={`relative flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors ${
+                  className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-colors ${
                     active
                       ? "text-foreground"
                       : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
@@ -250,7 +250,7 @@ function AdminLayout() {
   );
 
   return (
-    <div className="admin-theme relative min-h-screen">
+    <div className="admin-theme relative flex min-h-screen">
       {/* One faint accent wash, top-left only - enough to feel lit, quiet
           enough to read a dense table over. */}
       <div className="pointer-events-none fixed inset-0 -z-10">
@@ -261,14 +261,14 @@ function AdminLayout() {
       <motion.aside
         animate={{ width: collapsed ? 84 : 260 }}
         transition={{ type: "spring", stiffness: 260, damping: 30 }}
-        className="fixed inset-y-0 left-0 z-30 hidden border-r border-white/[0.06] bg-white/[0.02] backdrop-blur-2xl lg:block"
+        className="sticky top-0 z-30 hidden h-screen shrink-0 border-r border-white/[0.06] bg-white/[0.02] backdrop-blur-2xl lg:block"
       >
         {sidebar}
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="absolute -right-3 top-20 hidden h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition hover:text-primary lg:flex"
+          className="absolute right-2 top-4 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/[0.08] hover:text-foreground lg:flex"
         >
           <motion.span animate={{ rotate: collapsed ? 180 : 0 }}>
             <ChevronsLeft className="h-3.5 w-3.5" />
@@ -301,10 +301,7 @@ function AdminLayout() {
       </AnimatePresence>
 
       {/* Main */}
-      <motion.div
-        animate={{ paddingLeft: 0 }}
-        className={`min-h-screen transition-[padding] duration-300 ${collapsed ? "lg:pl-[84px]" : "lg:pl-[260px]"}`}
-      >
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/[0.06] bg-[var(--background)]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
           <button
             type="button"
@@ -333,7 +330,7 @@ function AdminLayout() {
             </motion.div>
           </AnimatePresence>
         </main>
-      </motion.div>
+      </div>
     </div>
   );
 }

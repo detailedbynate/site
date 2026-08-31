@@ -211,3 +211,46 @@ export const addUser = createServerFn({ method: "POST" })
     });
     return { user: toPublicUser(user) };
   });
+
+export const setUserRole = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ userId: z.string().min(1), role: z.enum(["owner", "staff"]) }))
+  .handler(async ({ data }) => {
+    const { updateUserRole } = await import("../db.server");
+    const { requireRole, toPublicUser } = await import("../auth.server");
+
+    await requireRole("owner");
+    const user = await updateUserRole(data.userId, data.role);
+    if (!user) throw new Error("Account not found.");
+    return { user: toPublicUser(user) };
+  });
+
+export const removeUser = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ userId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { deleteUser } = await import("../db.server");
+    const { requireRole } = await import("../auth.server");
+
+    const me = await requireRole("owner");
+    // Removing yourself would drop your own session mid-request.
+    if (me.id === data.userId) throw new Error("You can't remove your own account.");
+    await deleteUser(data.userId);
+    return { ok: true };
+  });
+
+/** Owner-initiated password reset for a teammate who's locked out. */
+export const resetUserPassword = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({ userId: z.string().min(1), newPassword: z.string().min(1).max(200) }),
+  )
+  .handler(async ({ data }) => {
+    const { adminSetUserPassword } = await import("../db.server");
+    const { requireRole, hashPassword, validatePasswordStrength } = await import("../auth.server");
+
+    await requireRole("owner");
+    const weak = validatePasswordStrength(data.newPassword);
+    if (weak) throw new Error(weak);
+
+    const { hash, salt } = await hashPassword(data.newPassword);
+    await adminSetUserPassword(data.userId, hash, salt);
+    return { ok: true };
+  });
