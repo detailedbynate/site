@@ -3,6 +3,7 @@ import { motion, useInView, useMotionValue, useTransform, animate } from "motion
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Sparkles, Star, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { BeforeAfter } from "@/components/BeforeAfter";
+import { getPublicGallery } from "@/lib/api/booking.functions";
 import before1 from "@/assets/before-1.jpg";
 import after1 from "@/assets/after-1.jpg";
 import before2 from "@/assets/before-2.jpg";
@@ -11,6 +12,15 @@ import before3 from "@/assets/before-3.jpg";
 import after3 from "@/assets/after-3.jpg";
 
 export const Route = createFileRoute("/results")({
+  // Uploaded pairs (Admin → SEO & branding) are shown ahead of the bundled
+  // samples, so this page reflects real work once there is any.
+  loader: async () => {
+    try {
+      return { gallery: (await getPublicGallery()).pairs };
+    } catch {
+      return { gallery: [] };
+    }
+  },
   head: () => ({
     meta: [
       { title: "Results — Detailed by Nate | Before & After Gallery" },
@@ -67,6 +77,21 @@ const results = [
 ];
 
 function ResultsPage() {
+  const { gallery } = Route.useLoaderData();
+  // Uploaded pairs lead, bundled samples follow, so the page never looks
+  // empty before any real work has been added.
+  const uploaded = (gallery ?? [])
+    .filter((g) => g.beforeUrl && g.afterUrl)
+    .map((g) => ({
+      label: g.label,
+      detail: "Recent work",
+      before: g.beforeUrl as string,
+      after: g.afterUrl as string,
+      desc: "",
+      package: "",
+    }));
+  const shown = uploaded.length > 0 ? [...uploaded, ...results] : results;
+
   return (
     <div className="min-h-screen overflow-x-hidden">
       {/* Nav */}
@@ -143,7 +168,7 @@ function ResultsPage() {
       {/* Gallery */}
       <section className="pb-24 px-6">
         <div className="max-w-6xl mx-auto space-y-28">
-          {results.map((r, i) => (
+          {shown.map((r, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 50 }}

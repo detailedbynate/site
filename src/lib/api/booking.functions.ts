@@ -29,12 +29,14 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
   return {
     services: services
       .filter((s) => s.active)
-      .map(({ id, title, subtitle, priceValue, durationMinutes }) => ({
+      .map(({ id, title, subtitle, priceValue, durationMinutes, features, description }) => ({
         id,
         title,
         subtitle,
         priceValue,
         durationMinutes,
+        features: features ?? [],
+        description: description ?? "",
       })),
     addOns: addOns
       .filter((a) => a.active)
@@ -162,7 +164,14 @@ export const createBooking = createServerFn({ method: "POST" })
     );
     const match = freshSlots.find((s) => s.startTime === data.startTime);
     if (!match) {
-      throw new Error("That time was just booked by someone else — please pick another slot.");
+      // Distinguish "that whole day is closed/out of range" from "someone
+      // beat you to that slot" — telling a customer their date was taken
+      // when the shop is shut that day just sends them in circles.
+      throw new Error(
+        freshSlots.length === 0
+          ? "That date isn't available for booking. Please choose another day."
+          : "That time was just booked by someone else — please pick another slot.",
+      );
     }
 
     const client = await findOrCreateClient({

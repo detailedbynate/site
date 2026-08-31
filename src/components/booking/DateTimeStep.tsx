@@ -91,6 +91,8 @@ export function DateTimeStep({ serviceId, addOnIds, location, date, time, onDate
     let cancelled = false;
     setLoadingSlots(true);
     setSlotsError(null);
+    // Deliberately NOT clearing `slots` here — blanking it collapses the
+    // panel for one frame and it visibly snaps back when data arrives.
 
     getAvailability({ data: { date, serviceId, addOnIds, location: location ?? undefined } })
       .then((res) => {
@@ -173,42 +175,41 @@ export function DateTimeStep({ serviceId, addOnIds, location, date, time, onDate
         )}
       </div>
 
-      <motion.div
-        key={date ?? "none"}
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass rounded-3xl p-5"
-      >
+      <div className="glass min-h-[168px] rounded-3xl p-5">
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
           <Clock className="h-3.5 w-3.5" /> Time slots
         </p>
 
         {!selectedDay ? (
           <p className="mt-3 text-sm text-muted-foreground">Pick an open date to see times.</p>
-        ) : loadingSlots ? (
-          <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading times…
-          </div>
         ) : slotsError ? (
           <p className="mt-3 text-sm font-medium text-destructive">{slotsError}</p>
+        ) : loadingSlots && !slots?.length ? (
+          // Skeletons rather than a one-line spinner: the panel keeps roughly
+          // the height it will have, so nothing jumps when the slots land.
+          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4" aria-busy="true">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-[46px] animate-pulse rounded-2xl bg-secondary/50" />
+            ))}
+          </div>
         ) : !slots?.length ? (
           <p className="mt-3 text-sm text-muted-foreground">
             No times left on that day — try another date.
           </p>
         ) : (
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {slots.map((s, i) => {
+          <div
+            className={`mt-4 grid grid-cols-2 gap-2.5 transition-opacity duration-150 sm:grid-cols-4 ${
+              loadingSlots ? "opacity-50" : "opacity-100"
+            }`}
+          >
+            {slots.map((s) => {
               const active = s.startTime === time;
               return (
-                <motion.button
+                <button
                   key={s.startTime}
                   type="button"
-                  initial={{ opacity: 0, scale: 0.94 }}
-                  animate={{ opacity: 1, scale: 1, transition: { delay: i * 0.03 } }}
-                  whileHover={{ y: -3 }}
-                  whileTap={{ scale: 0.96 }}
                   onClick={() => onTime(s.startTime)}
-                  className={`rounded-2xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                  className={`rounded-2xl border px-3 py-3 text-sm font-semibold transition-[background-color,border-color,transform] duration-150 hover:-translate-y-0.5 active:translate-y-0 ${
                     active
                       ? "border-transparent text-primary-foreground"
                       : "border-border bg-card text-foreground hover:border-primary/50"
@@ -220,12 +221,12 @@ export function DateTimeStep({ serviceId, addOnIds, location, date, time, onDate
                   }
                 >
                   {formatTime12h(s.startTime)}
-                </motion.button>
+                </button>
               );
             })}
           </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }

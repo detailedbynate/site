@@ -17,6 +17,8 @@ export interface ServiceDef {
   subtitle: string;
   priceValue: number;
   durationMinutes: number;
+  features?: string[];
+  description?: string;
 }
 
 export interface AddOnDef {
@@ -34,6 +36,9 @@ export const DEFAULT_SERVICES: ServiceDef[] = [
     subtitle: "Exterior",
     priceValue: 149,
     durationMinutes: 90,
+    features: ["Foam pre-soak", "Two-bucket hand wash", "Wheels + tires", "Spray sealant"],
+    description:
+      "A proper hand wash that protects your paint. Foam pre-soak, two-bucket method, wheels degreased, and a sealant for that deep wet shine.",
   },
   {
     id: "gold",
@@ -41,6 +46,9 @@ export const DEFAULT_SERVICES: ServiceDef[] = [
     subtitle: "Interior",
     priceValue: 199,
     durationMinutes: 120,
+    features: ["Steam extraction", "Leather condition", "Vents + crevices", "Glass interior"],
+    description:
+      "Cabin restored to factory-fresh. Steam extraction on carpets and seats, leather conditioned, every crevice, vent and stitch line touched by hand.",
   },
   {
     id: "diamond",
@@ -48,6 +56,14 @@ export const DEFAULT_SERVICES: ServiceDef[] = [
     subtitle: "Interior & Exterior",
     priceValue: 399,
     durationMinutes: 240,
+    features: [
+      "Full exterior decon + wax",
+      "Complete interior deep clean",
+      "Tire & trim dressing",
+      "Glass + jambs",
+    ],
+    description:
+      "The full obsession. Two-bucket exterior decon wash, clay bar and seal, plus a complete interior reset — steam, leather conditioning, and every vent detailed.",
   },
 ];
 

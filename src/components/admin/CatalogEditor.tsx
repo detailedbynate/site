@@ -30,6 +30,9 @@ export type CatalogItem = {
   durationMinutes: number;
   active: boolean;
   sortOrder: number;
+  /** Services only — pills on the booking form and homepage card. */
+  features?: string[];
+  description?: string;
 };
 
 type Props = {
@@ -54,6 +57,8 @@ const blank = (sortOrder: number): CatalogItem => ({
   durationMinutes: 60,
   active: true,
   sortOrder,
+  features: [],
+  description: "",
 });
 
 /** URL/id-safe slug generated from the title for brand-new items. */
@@ -88,6 +93,8 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                 durationMinutes: s.durationMinutes,
                 active: s.active,
                 sortOrder: s.sortOrder,
+                features: "features" in s ? (s.features ?? []) : [],
+                description: "description" in s ? (s.description ?? "") : "",
               }
             : {
                 id: s.id,
@@ -307,6 +314,32 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                     />
                   </Field>
                 </div>
+                {kind === "service" && (
+                  <>
+                    <Field
+                      label="Description"
+                      hint="Shown on the homepage card and under the name when booking."
+                    >
+                      <textarea
+                        className={`${inputCls} min-h-[80px] resize-y`}
+                        value={draft.description ?? ""}
+                        maxLength={600}
+                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                      />
+                    </Field>
+                    <Field label="Feature pills" hint="One per line. Shown as small pills.">
+                      <textarea
+                        className={`${inputCls} min-h-[90px] resize-y`}
+                        value={(draft.features ?? []).join("\n")}
+                        placeholder={"Foam pre-soak\nTwo-bucket hand wash"}
+                        onChange={(e) =>
+                          setDraft({ ...draft, features: e.target.value.split("\n") })
+                        }
+                      />
+                    </Field>
+                  </>
+                )}
+
                 <label className="flex items-center gap-2.5 text-sm text-foreground">
                   <input
                     type="checkbox"

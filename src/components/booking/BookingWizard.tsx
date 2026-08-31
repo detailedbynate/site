@@ -44,8 +44,10 @@ type FormFieldDef = {
   onlyForServices: string[];
 };
 
+type CatalogService = ServiceDef & { features: string[]; description: string };
+
 type Catalog = {
-  services: ServiceDef[];
+  services: CatalogService[];
   addOns: AddOnDef[];
   travelFee: number;
   formFields: FormFieldDef[];
@@ -344,9 +346,21 @@ export function BookingWizard({
                           ${s.priceValue}
                         </span>
                       </div>
-                      <p className="mt-1.5 text-sm uppercase tracking-wider text-muted-foreground">
-                        {s.subtitle}
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+                        {s.description || s.subtitle}
                       </p>
+                      {s.features.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {s.features.map((f) => (
+                            <span
+                              key={f}
+                              className="rounded-full bg-secondary px-3 py-1 text-[11px] font-medium text-secondary-foreground"
+                            >
+                              {f}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </motion.button>
                   );
                 })}

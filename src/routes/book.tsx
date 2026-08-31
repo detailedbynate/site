@@ -2,8 +2,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { ArrowLeft, Phone, Mail, MapPin, Clock, Calendar, CheckCircle2 } from "lucide-react";
 import { BookingWizard } from "@/components/booking/BookingWizard";
+import { getCatalog } from "@/lib/api/booking.functions";
 
 export const Route = createFileRoute("/book")({
+  loader: async () => {
+    try {
+      return { business: (await getCatalog()).business };
+    } catch {
+      return { business: null };
+    }
+  },
   head: () => ({
     meta: [
       { title: "Book Now — Detailed by Nate" },
@@ -23,6 +31,7 @@ const steps = [
 ];
 
 function BookPage() {
+  const { business } = Route.useLoaderData();
   return (
     <div className="min-h-screen overflow-x-hidden">
       {/* Nav */}
@@ -142,9 +151,9 @@ function BookPage() {
                 </p>
                 <div className="space-y-3">
                   {[
-                    { icon: Phone, text: "(555) 123-4567" },
-                    { icon: Mail, text: "book@detailedbynate.com" },
-                    { icon: MapPin, text: "Sault Ste. Marie area — mobile & in-studio" },
+                    { icon: Phone, text: business?.phone ?? "(555) 123-4567" },
+                    { icon: Mail, text: business?.email ?? "book@detailedbynate.com" },
+                    { icon: MapPin, text: `${business?.serviceArea ?? "Sault Ste. Marie area"} — mobile & in-studio` },
                     { icon: Clock, text: "Mon–Sat, 8am–6pm" },
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -157,7 +166,7 @@ function BookPage() {
               <div className="space-y-4">
                 {[
                   "All packages include a pre-detail inspection",
-                  "Mobile service available across the Sault Ste. Marie area",
+                  `Mobile service available across the ${business?.serviceArea ?? "Sault Ste. Marie area"}`,
                   "Ceramic coatings require a 24-hour cure window",
                   "Gift cards available — ask when booking",
                 ].map((item, i) => (
@@ -199,7 +208,7 @@ function BookPage() {
       <footer className="border-t border-border py-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <p>© {new Date().getFullYear()} Detailed by Nate. All rights reserved.</p>
-          <p>Sault Ste. Marie area</p>
+          <p>{business?.serviceArea ?? "Sault Ste. Marie area"}</p>
         </div>
       </footer>
     </div>

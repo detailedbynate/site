@@ -12,12 +12,26 @@ import before2 from "@/assets/before-2.jpg";
 import after2 from "@/assets/after-2.jpg";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { useBookingModal } from "@/components/booking/BookingModal";
+import { getCatalog, getPublicGallery } from "@/lib/api/booking.functions";
 import type { ServiceId } from "@/lib/services";
 
 export const Route = createFileRoute("/")({
   // No head override here on purpose: the homepage's title and description
   // come from the root route, which reads them from /admin/seo. A hardcoded
   // title here would silently win and make that page look broken.
+  //
+  // Pricing is loaded (not hardcoded) so editing a package in the admin
+  // updates this page too. Loading rather than fetching client-side means
+  // the right price is in the HTML on first paint, with no flash of a stale
+  // number and nothing for a crawler to read wrong.
+  loader: async () => {
+    try {
+      const [catalog, gallery] = await Promise.all([getCatalog(), getPublicGallery()]);
+      return { services: catalog.services, business: catalog.business, gallery: gallery.pairs };
+    } catch {
+      return { services: null, business: null, gallery: [] };
+    }
+  },
   component: Index,
 });
 
@@ -38,8 +52,14 @@ function Counter({ to, suffix = "" }: { to: number; suffix?: string }) {
   return <span ref={ref}>{display}{suffix}</span>;
 }
 
-const services = [
+/**
+ * Imagery and layout order live here; price, title, blurb and feature list
+ * come from the database and are merged in below by id. Anything the admin
+ * can edit must NOT be duplicated here, or the two will drift.
+ */
+const serviceCards = [
   {
+    id: "diamond",
     tier: "01",
     image: serviceDiamond,
     title: "Diamond",
@@ -50,6 +70,7 @@ const services = [
     popular: true,
   },
   {
+    id: "gold",
     tier: "02",
     image: serviceGold,
     title: "Gold",
@@ -60,6 +81,7 @@ const services = [
     popular: false,
   },
   {
+    id: "silver",
     tier: "03",
     image: serviceSilver,
     title: "Silver",
@@ -82,7 +104,7 @@ const reviews = [
 
 const faqs = [
   { q: "How long does a full detail take?", a: "A standard full detail runs 3–5 hours depending on vehicle size and condition. Ceramic coatings require an additional cure day." },
-  { q: "Do you come to me?", a: "Yes — mobile service is available throughout the metro area. I bring water, power, and every product needed." },
+  { q: "Do you come to me?", a: "Yes — mobile service is available throughout the area. I bring water, power, and every product needed." },
   { q: "What's included in the ceramic coating package?", a: "Full decontamination wash, clay bar, single-stage paint correction, panel wipe, and a professional 9H ceramic coating with warranty." },
   { q: "How should I prepare my vehicle?", a: "Just remove personal belongings. I handle everything else — from cup-holder gunk to dog hair embedded in the seats." },
   { q: "Do you offer maintenance packages?", a: "Absolutely. Monthly and bi-weekly maintenance plans keep your finish protected and save you money long-term." },
@@ -91,6 +113,42 @@ const faqs = [
 function Index() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const booking = useBookingModal();
+  const { services: liveServices, business, gallery } = Route.useLoaderData();
+  // Uploaded pairs (Admin → SEO & branding) replace the bundled samples once
+  // there are any, so the homepage shows real work rather than stock shots.
+  const samplePairs = [
+    { id: "sample-1", label: "Paint correction", beforeUrl: before1, afterUrl: after1 },
+    { id: "sample-2", label: "Interior reset", beforeUrl: before2, afterUrl: after2 },
+  ];
+  // Uploaded pairs lead; samples top the row up to two so the grid is never
+  // left with a single lonely tile.
+  const shownPairs = [
+    ...(gallery ?? []).filter((g) => g.beforeUrl && g.afterUrl),
+    ...samplePairs,
+  ].slice(0, 2);
+  // Contact details are editable in Settings, so they're read rather than
+  // hardcoded — otherwise changing them there would silently do nothing.
+  const phone = business?.phone ?? "(555) 123-4567";
+  const email = business?.email ?? "book@detailedbynate.com";
+  const area = business?.serviceArea ?? "Sault Ste. Marie area";
+
+  // Merge live catalog values over the local card presets. A package that has
+  // been deactivated in the admin drops off the homepage entirely, so the
+  // site never advertises something nobody can book.
+  const services = serviceCards
+    .map((card) => {
+      const live = liveServices?.find((s) => s.id === card.id);
+      if (liveServices && !live) return null;
+      return {
+        ...card,
+        title: live?.title ?? card.title,
+        subtitle: live?.subtitle ?? card.subtitle,
+        price: live ? `From $${live.priceValue}` : card.price,
+        desc: live?.description || card.desc,
+        features: live?.features?.length ? live.features : card.features,
+      };
+    })
+    .filter(Boolean) as (typeof serviceCards[number])[];
 
   return (
     <div className="min-h-screen overflow-x-hidden">
@@ -297,7 +355,7 @@ function Index() {
                   </ul>
                   <button
                     type="button"
-                    onClick={() => booking.open(s.title.toLowerCase() as ServiceId)}
+                    onClick={() => booking.open(s.id as ServiceId)}
                     className="btn-liquid mt-auto w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold text-sm shadow-[0_10px_30px_-10px_var(--primary)] hover:shadow-[0_16px_44px_-10px_var(--primary)]"
                   >
                     Book {s.title} <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
@@ -397,9 +455,9 @@ function Index() {
               </button>
 
               <div className="mt-10 flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-2"><Phone className="w-4 h-4 text-primary" /> (555) 123-4567</span>
-                <span className="inline-flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> book@detailedbynate.com</span>
-                <span className="inline-flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Sault Ste. Marie area</span>
+                <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-2 transition-colors hover:text-primary"><Phone className="w-4 h-4 text-primary" /> {phone}</a>
+                <a href={`mailto:${email}`} className="inline-flex items-center gap-2 transition-colors hover:text-primary"><Mail className="w-4 h-4 text-primary" /> {email}</a>
+                <span className="inline-flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> {area}</span>
               </div>
             </div>
           </motion.div>
@@ -428,8 +486,14 @@ function Index() {
           </motion.div>
 
           <div className="grid md:grid-cols-2 gap-6">
-            <BeforeAfter before={before1} after={after1} label="Paint correction" />
-            <BeforeAfter before={before2} after={after2} label="Interior reset" />
+            {shownPairs.map((g) => (
+              <BeforeAfter
+                key={g.id}
+                before={g.beforeUrl as string}
+                after={g.afterUrl as string}
+                label={g.label}
+              />
+            ))}
           </div>
         </div>
       </section>
@@ -488,7 +552,7 @@ function Index() {
       <footer className="border-t border-border py-10 mt-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <p>© {new Date().getFullYear()} Detailed by Nate. All rights reserved.</p>
-          <p>Crafted with obsession in the metro area.</p>
+          <p>Crafted with obsession in the {area}.</p>
         </div>
       </footer>
     </div>

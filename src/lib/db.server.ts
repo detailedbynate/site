@@ -103,6 +103,10 @@ export interface ServiceRecord {
   subtitle: string;
   priceValue: number;
   durationMinutes: number;
+  /** Short selling points, shown as pills on the booking form. */
+  features: string[];
+  /** Longer marketing copy for the homepage card. */
+  description: string;
   /** Hidden services stay bookable for existing bookings but aren't offered. */
   active: boolean;
   sortOrder: number;
@@ -429,6 +433,8 @@ function seedCatalog(): { services: ServiceRecord[]; addOns: AddOnRecord[] } {
       subtitle: s.subtitle,
       priceValue: s.priceValue,
       durationMinutes: s.durationMinutes,
+      features: s.features ?? [],
+      description: s.description ?? "",
       active: true,
       sortOrder: i,
     })),
@@ -479,7 +485,19 @@ async function ensureDB(): Promise<DBShape> {
       ...parsed,
       // Catalog/settings need a deeper merge so a partial old file doesn't
       // wipe the seeded defaults.
-      services: parsed.services?.length ? parsed.services : base.services,
+      // Services stored before `features`/`description` existed get them
+      // backfilled from the seed defaults, matched by id — otherwise the
+      // homepage cards and booking pills would silently go blank on upgrade.
+      services: parsed.services?.length
+        ? parsed.services.map((svc) => {
+            const seed = DEFAULT_SERVICES.find((d) => d.id === svc.id);
+            return {
+              ...svc,
+              features: svc.features ?? seed?.features ?? [],
+              description: svc.description ?? seed?.description ?? "",
+            };
+          })
+        : base.services,
       addOns: parsed.addOns?.length ? parsed.addOns : base.addOns,
       emailRules: parsed.emailRules?.length ? parsed.emailRules : base.emailRules,
       settings: migrateSettings(

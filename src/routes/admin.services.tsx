@@ -33,6 +33,8 @@ function Services() {
               subtitle: item.detail,
               priceValue: item.price,
               durationMinutes: item.durationMinutes,
+              features: (item.features ?? []).map((f) => f.trim()).filter(Boolean),
+              description: item.description ?? "",
               active: item.active,
               sortOrder: item.sortOrder,
             },

@@ -327,6 +327,8 @@ export const saveService = createServerFn({ method: "POST" })
       subtitle: z.string().max(80).default(""),
       priceValue: z.number().int().min(0).max(100000),
       durationMinutes: z.number().int().min(15).max(1440),
+      features: z.array(z.string().min(1).max(60)).max(12).default([]),
+      description: z.string().max(600).default(""),
       active: z.boolean().default(true),
       sortOrder: z.number().int().min(0).max(999).default(0),
     }),

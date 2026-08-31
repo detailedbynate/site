@@ -104,6 +104,17 @@ export async function getAvailableSlots(
   location?: "mobile" | "shop",
 ): Promise<SlotResult[]> {
   const cfg = await getSettings();
+
+  // Enforce the booking window HERE, not just when building the calendar.
+  // getAvailableDays() greys out past/too-soon days, but that is only a
+  // client-side hint; createBooking re-checks against this function, so
+  // without this guard a crafted request could book in the past or inside
+  // the notice period.
+  const today = todayInZone(cfg.timezone);
+  const earliest = addDays(today, cfg.leadDays);
+  const latest = addDays(today, Math.max(cfg.bookingWindowDays - 1, 0));
+  if (date < earliest || date > latest) return [];
+
   const hours = hoursForDate(cfg, date, location);
   if (!hours) return [];
   const { openMin, closeMin } = hours;
