@@ -763,3 +763,188 @@ export const importCustomers = createServerFn({ method: "POST" })
     await requireUser();
     return await importClients(data.rows);
   });
+
+// ============================ Schedule ==================================
+
+const daySchema = z.object({
+  open: z.boolean(),
+  openHour: z.number().int().min(0).max(23),
+  closeHour: z.number().int().min(1).max(24),
+});
+const weekSchema = z.array(daySchema).length(7);
+
+export const saveSchedule = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      weeklySchedule: weekSchema,
+      mobileScheduleEnabled: z.boolean(),
+      mobileSchedule: weekSchema,
+      slotIncrementMinutes: z.number().int().min(15).max(240),
+      leadDays: z.number().int().min(0).max(60),
+      bookingWindowDays: z.number().int().min(1).max(120),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const bad = (w: typeof data.weeklySchedule, label: string) => {
+      for (let i = 0; i < 7; i++) {
+        if (w[i].open && w[i].closeHour <= w[i].openHour) {
+          throw new Error(`${label}: closing time must be after opening time.`);
+        }
+      }
+      if (w.every((d) => !d.open)) throw new Error(`${label}: you can't be closed every day.`);
+    };
+    bad(data.weeklySchedule, "Shop schedule");
+    if (data.mobileScheduleEnabled) bad(data.mobileSchedule, "Mobile schedule");
+
+    // Keep the legacy single-window fields roughly in step so anything still
+    // reading them (and the .env seed docs) isn't wildly misleading.
+    const openDays = data.weeklySchedule.filter((d) => d.open);
+    const settings = await updateSettings({
+      ...data,
+      openHour: Math.min(...openDays.map((d) => d.openHour)),
+      closeHour: Math.max(...openDays.map((d) => d.closeHour)),
+      closedDays: data.weeklySchedule.flatMap((d, i) => (d.open ? [] : [i])),
+    });
+    return { settings };
+  });
+
+// ============================ Sales =====================================
+
+/**
+ * Sales reporting. Revenue is recognised on COMPLETED jobs only —
+ * confirmed-but-not-yet-done work is reported separately as pipeline, so the
+ * headline number can't be inflated by bookings that might still cancel.
+ */
+export const getSales = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({ months: z.number().int().min(1).max(36).default(12) }).default({ months: 12 }),
+  )
+  .handler(async ({ data }) => {
+    const { listBookingsWithClients, getSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const [bookings, settings] = await Promise.all([listBookingsWithClients(), getSettings()]);
+
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: settings.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const net = (b: (typeof bookings)[number]) =>
+      (b.totalPrice ?? 0) - (b.discount ?? 0) + (b.tip ?? 0);
+
+    const active = bookings.filter((b) => b.status !== "cancelled");
+    const completed = active.filter((b) => b.status === "completed");
+    const upcoming = active.filter((b) => b.status === "confirmed");
+
+    // Month buckets, oldest first.
+    const cursor = new Date(`${today}T12:00:00`);
+    const months: {
+      key: string;
+      label: string;
+      revenue: number;
+      tips: number;
+      jobs: number;
+    }[] = [];
+    for (let i = data.months - 1; i >= 0; i--) {
+      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const inMonth = completed.filter((b) => b.date.startsWith(key));
+      months.push({
+        key,
+        label: d.toLocaleString("en-US", { month: "short" }),
+        revenue: inMonth.reduce((s, b) => s + net(b), 0),
+        tips: inMonth.reduce((s, b) => s + (b.tip ?? 0), 0),
+        jobs: inMonth.length,
+      });
+    }
+
+    // By service.
+    const svc = new Map<string, { title: string; jobs: number; revenue: number }>();
+    for (const b of completed) {
+      const e = svc.get(b.serviceId) ?? { title: b.serviceTitle, jobs: 0, revenue: 0 };
+      e.jobs += 1;
+      e.revenue += net(b);
+      svc.set(b.serviceId, e);
+    }
+
+    // Add-on attach rate — which extras actually sell.
+    const addons = new Map<string, number>();
+    for (const b of completed) {
+      for (const t of b.addOnTitles ?? []) addons.set(t, (addons.get(t) ?? 0) + 1);
+    }
+
+    // Best customers by spend.
+    const byClient = new Map<string, { name: string; jobs: number; spend: number }>();
+    for (const b of completed) {
+      const key = b.clientId;
+      const e = byClient.get(key) ?? { name: b.client?.name ?? "Unknown", jobs: 0, spend: 0 };
+      e.jobs += 1;
+      e.spend += net(b);
+      byClient.set(key, e);
+    }
+
+    const revenue = completed.reduce((s, b) => s + net(b), 0);
+    const thisMonth = today.slice(0, 7);
+    const lastMonthDate = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+    const mtd = completed
+      .filter((b) => b.date.startsWith(thisMonth))
+      .reduce((s, b) => s + net(b), 0);
+    const lastMonth = completed
+      .filter((b) => b.date.startsWith(lastMonthKey))
+      .reduce((s, b) => s + net(b), 0);
+
+    const mobile = completed.filter((b) => b.location === "mobile");
+
+    return {
+      totals: {
+        revenue,
+        jobs: completed.length,
+        avgJob: completed.length ? Math.round(revenue / completed.length) : 0,
+        tips: completed.reduce((s, b) => s + (b.tip ?? 0), 0),
+        discounts: completed.reduce((s, b) => s + (b.discount ?? 0), 0),
+        mtd,
+        lastMonth,
+        // Percent change month over month; null when there's no baseline.
+        momChange: lastMonth > 0 ? Math.round(((mtd - lastMonth) / lastMonth) * 100) : null,
+        pipeline: upcoming.reduce((s, b) => s + net(b), 0),
+        pipelineJobs: upcoming.length,
+        outstanding: active
+          .filter((b) => b.paymentStatus !== "paid" && b.paymentStatus !== "refunded")
+          .reduce((s, b) => s + Math.max(0, net(b) - (b.amountPaid ?? 0)), 0),
+        cancelled: bookings.filter((b) => b.status === "cancelled").length,
+        mobileShare: completed.length
+          ? Math.round((mobile.length / completed.length) * 100)
+          : 0,
+        repeatCustomers: [...byClient.values()].filter((c) => c.jobs > 1).length,
+      },
+      months,
+      byService: [...svc.values()].sort((a, b) => b.revenue - a.revenue),
+      byAddOn: [...addons.entries()]
+        .map(([title, count]) => ({ title, count }))
+        .sort((a, b) => b.count - a.count),
+      topCustomers: [...byClient.values()].sort((a, b) => b.spend - a.spend).slice(0, 8),
+      recent: completed
+        .slice()
+        .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))
+        .slice(0, 10)
+        .map((b) => ({
+          id: b.id,
+          reference: b.reference,
+          date: b.date,
+          client: b.client?.name ?? "—",
+          service: b.serviceTitle,
+          tip: b.tip ?? 0,
+          total: net(b),
+        })),
+    };
+  });

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
@@ -116,6 +116,16 @@ export interface AddOnRecord {
   sortOrder: number;
 }
 
+/** One day's trading hours. `open: false` means closed that day. */
+export interface DaySchedule {
+  open: boolean;
+  openHour: number;
+  closeHour: number;
+}
+
+/** Seven entries, index 0 = Sunday. */
+export type WeekSchedule = DaySchedule[];
+
 export interface Settings {
   businessName: string;
   contactEmail: string;
@@ -130,6 +140,18 @@ export interface Settings {
   closedDays: number[];
   bookingWindowDays: number;
   travelFee: number;
+  /**
+   * Base weekly hours — the schedule BEFORE Google Calendar busy blocks and
+   * existing bookings are subtracted. This is the source of truth for what
+   * you are open; Calendar only ever removes time from it, never adds.
+   */
+  weeklySchedule: WeekSchedule;
+  /**
+   * Mobile jobs often run a shorter day (travel, daylight). When enabled,
+   * customers choosing mobile see these hours instead of the shop ones.
+   */
+  mobileScheduleEnabled: boolean;
+  mobileSchedule: WeekSchedule;
   /** Resend API key — HTTP only, so no SMTP dependency. */
   resendApiKey: string;
   emailFrom: string;
@@ -201,6 +223,14 @@ interface DBShape {
   settings: Settings;
 }
 
+export function defaultWeek(openHour: number, closeHour: number, closedDays: number[]): WeekSchedule {
+  return Array.from({ length: 7 }, (_, day) => ({
+    open: !closedDays.includes(day),
+    openHour,
+    closeHour,
+  }));
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   businessName: "Detailed by Nate",
   contactEmail: "book@detailedbynate.com",
@@ -214,6 +244,17 @@ export const DEFAULT_SETTINGS: Settings = {
   closedDays: [0],
   bookingWindowDays: Number(process.env.BOOKING_WINDOW_DAYS ?? 21),
   travelFee: 25,
+  weeklySchedule: defaultWeek(
+    Number(process.env.BUSINESS_OPEN_HOUR ?? 8),
+    Number(process.env.BUSINESS_CLOSE_HOUR ?? 18),
+    [0],
+  ),
+  mobileScheduleEnabled: false,
+  mobileSchedule: defaultWeek(
+    Number(process.env.BUSINESS_OPEN_HOUR ?? 9),
+    Number(process.env.BUSINESS_CLOSE_HOUR ?? 17),
+    [0],
+  ),
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
   emailReplyTo: "",
@@ -349,16 +390,67 @@ async function ensureDB(): Promise<DBShape> {
       services: parsed.services?.length ? parsed.services : base.services,
       addOns: parsed.addOns?.length ? parsed.addOns : base.addOns,
       emailRules: parsed.emailRules?.length ? parsed.emailRules : base.emailRules,
-      settings: { ...base.settings, ...(parsed.settings ?? {}) },
+      settings: migrateSettings(
+        { ...base.settings, ...(parsed.settings ?? {}) },
+        // Only the STORED settings count as pre-existing. Without this the
+        // seeded default week looks "already migrated" and an upgrading
+        // store would silently adopt default hours instead of its own.
+        parsed.settings ?? {},
+      ),
     };
-  } catch {
-    await writeFile(DB_FILE, JSON.stringify(base, null, 2), "utf-8");
-    return base;
+  } catch (err) {
+    // A missing file is the only case where creating a fresh store is safe.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      await atomicWrite(DB_FILE, JSON.stringify(base, null, 2));
+      return base;
+    }
+
+    // Anything else (unreadable, truncated, invalid JSON) must NOT be
+    // silently replaced with an empty database — that would destroy every
+    // booking and customer. Preserve the file for recovery and fail loudly.
+    const backup = `${DB_FILE}.corrupt-${Date.now()}`;
+    await copyFile(DB_FILE, backup).catch(() => undefined);
+    throw new Error(
+      `Could not read the data store (${(err as Error).message}). ` +
+        `A copy was preserved at ${backup}. Refusing to overwrite it.`,
+    );
   }
 }
 
+/**
+ * Write via a temp file + rename. rename() is atomic on the same
+ * filesystem, so a crash mid-write leaves the previous store intact
+ * instead of a truncated file that the next read would reject.
+ */
+async function atomicWrite(file: string, contents: string): Promise<void> {
+  const tmp = `${file}.tmp-${process.pid}`;
+  await writeFile(tmp, contents, "utf-8");
+  await rename(tmp, file);
+}
+
+/**
+ * Older stores only had a single openHour/closeHour plus closedDays. Build a
+ * weekly schedule from those so nobody's hours silently change on upgrade.
+ */
+function migrateSettings(settings: Settings, stored: Partial<Settings>): Settings {
+  const valid = (w: unknown): w is WeekSchedule =>
+    Array.isArray(w) && w.length === 7 && w.every((d) => d && typeof d.openHour === "number");
+
+  if (!valid(stored.weeklySchedule)) {
+    settings.weeklySchedule = defaultWeek(
+      stored.openHour ?? settings.openHour,
+      stored.closeHour ?? settings.closeHour,
+      stored.closedDays ?? settings.closedDays ?? [0],
+    );
+  }
+  if (!valid(stored.mobileSchedule)) {
+    settings.mobileSchedule = settings.weeklySchedule.map((d) => ({ ...d }));
+  }
+  return settings;
+}
+
 async function persist(db: DBShape): Promise<void> {
-  await writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
+  await atomicWrite(DB_FILE, JSON.stringify(db, null, 2));
 }
 
 // Serialize writes so two near-simultaneous bookings can't clobber each

@@ -5,6 +5,7 @@ import { Building2, Clock, KeyRound, ShieldCheck } from "lucide-react";
 
 import { getAdminSettings, saveSettings } from "@/lib/api/admin.functions";
 import { TeamCard } from "@/components/admin/TeamCard";
+import { ScheduleCard } from "@/components/admin/ScheduleCard";
 import { changePassword, getMe, updateProfile } from "@/lib/api/auth.functions";
 import {
   Button,
@@ -135,112 +136,7 @@ function SettingsPage() {
           </div>
         </GlassCard>
 
-        <GlassCard index={1} className="p-6">
-          <div className="flex items-center gap-2.5">
-            <Clock className="h-4 w-4 text-primary" />
-            <p className="text-[15px] font-semibold tracking-tight text-foreground">
-              Hours & booking rules
-            </p>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            These directly control which slots customers are offered.
-          </p>
-
-          <div className="mt-5 space-y-4">
-            <Field label="Timezone" hint="An IANA name, e.g. America/Toronto.">
-              <input
-                className={inputCls}
-                value={s.timezone}
-                onChange={(e) => set("timezone", e.target.value)}
-              />
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Opens at (hour)">
-                <input
-                  className={inputCls}
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={s.openHour}
-                  onChange={(e) => set("openHour", Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Closes at (hour)">
-                <input
-                  className={inputCls}
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={s.closeHour}
-                  onChange={(e) => set("closeHour", Number(e.target.value))}
-                />
-              </Field>
-            </div>
-
-            <Field label="Closed days">
-              <div className="flex flex-wrap gap-1.5">
-                {DAYS.map((d, i) => {
-                  const closed = s.closedDays.includes(i);
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() =>
-                        set(
-                          "closedDays",
-                          closed ? s.closedDays.filter((x) => x !== i) : [...s.closedDays, i],
-                        )
-                      }
-                      className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                        closed
-                          ? "border-destructive/40 bg-destructive/15 text-destructive"
-                          : "border-border bg-card text-foreground hover:border-primary/50"
-                      }`}
-                    >
-                      {d}
-                    </button>
-                  );
-                })}
-              </div>
-              <span className="mt-1.5 block text-[11px] text-muted-foreground">
-                Highlighted days are closed and show greyed out to customers.
-              </span>
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Slot step (min)">
-                <input
-                  className={inputCls}
-                  type="number"
-                  min={15}
-                  step={15}
-                  value={s.slotIncrementMinutes}
-                  onChange={(e) => set("slotIncrementMinutes", Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Lead days" hint="0 = same day.">
-                <input
-                  className={inputCls}
-                  type="number"
-                  min={0}
-                  value={s.leadDays}
-                  onChange={(e) => set("leadDays", Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Window (days)">
-                <input
-                  className={inputCls}
-                  type="number"
-                  min={1}
-                  value={s.bookingWindowDays}
-                  onChange={(e) => set("bookingWindowDays", Number(e.target.value))}
-                />
-              </Field>
-            </div>
-          </div>
-        </GlassCard>
-
+        <ScheduleCard />
         <AccountCard />
         <SecurityCard />
         <TeamCard />

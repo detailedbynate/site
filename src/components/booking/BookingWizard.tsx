@@ -384,7 +384,11 @@ export function BookingWizard({
                         animate="show"
                         whileHover={{ y: -6 }}
                         whileTap={{ scale: 0.98 }}
-                        onClick={() => setLocation(opt.id)}
+                        onClick={() => {
+                          setLocation(opt.id);
+                          setDate(null);
+                          setTime(null);
+                        }}
                         className={`glass relative rounded-3xl p-6 text-left ${
                           selected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/40"
                         }`}
@@ -435,6 +439,7 @@ export function BookingWizard({
               <DateTimeStep
                 serviceId={service}
                 addOnIds={picked}
+                location={location}
                 date={date}
                 time={time}
                 onDate={(iso) => {

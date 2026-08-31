@@ -22,6 +22,8 @@ type Slot = { startTime: string; startISO: string };
 type Props = {
   serviceId: ServiceId;
   addOnIds: AddOnId[];
+  /** Mobile can run different hours, so slots depend on it. */
+  location: "mobile" | "shop" | null;
   date: string | null;
   time: string | null;
   onDate: (iso: string) => void;
@@ -52,7 +54,7 @@ export function formatTime12h(hhmm: string): string {
   return `${hour}:${m.toString().padStart(2, "0")} ${period}`;
 }
 
-export function DateTimeStep({ serviceId, addOnIds, date, time, onDate, onTime }: Props) {
+export function DateTimeStep({ serviceId, addOnIds, location, date, time, onDate, onTime }: Props) {
   const [days, setDays] = useState<DayAvailability[] | null>(null);
   const [daysError, setDaysError] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[] | null>(null);
@@ -68,7 +70,7 @@ export function DateTimeStep({ serviceId, addOnIds, date, time, onDate, onTime }
     setDays(null);
     setDaysError(null);
 
-    getBookableDays({ data: { serviceId, addOnIds } })
+    getBookableDays({ data: { serviceId, addOnIds, location: location ?? undefined } })
       .then((res) => {
         if (!cancelled) setDays(res.days);
       })
@@ -79,7 +81,7 @@ export function DateTimeStep({ serviceId, addOnIds, date, time, onDate, onTime }
     return () => {
       cancelled = true;
     };
-  }, [serviceId, addOnKey]);
+  }, [serviceId, addOnKey, location]);
 
   useEffect(() => {
     if (!date) {
@@ -90,7 +92,7 @@ export function DateTimeStep({ serviceId, addOnIds, date, time, onDate, onTime }
     setLoadingSlots(true);
     setSlotsError(null);
 
-    getAvailability({ data: { date, serviceId, addOnIds } })
+    getAvailability({ data: { date, serviceId, addOnIds, location: location ?? undefined } })
       .then((res) => {
         if (!cancelled) setSlots(res.slots);
       })
@@ -104,7 +106,7 @@ export function DateTimeStep({ serviceId, addOnIds, date, time, onDate, onTime }
     return () => {
       cancelled = true;
     };
-  }, [date, serviceId, addOnKey]);
+  }, [date, serviceId, addOnKey, location]);
 
   const selectedDay = days?.find((d) => d.date === date && d.available) ?? null;
 

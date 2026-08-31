@@ -78,15 +78,35 @@ export interface SlotResult {
  * hours, excluding anything that overlaps a Google Calendar busy interval
  * or an existing local booking.
  */
+/**
+ * The base trading hours for a given date, honouring the mobile-specific
+ * schedule when the customer has chosen mobile service. Returns null when
+ * the shop is closed that day.
+ */
+function hoursForDate(
+  cfg: Awaited<ReturnType<typeof getSettings>>,
+  date: string,
+  location?: "mobile" | "shop",
+): { openMin: number; closeMin: number } | null {
+  const week =
+    location === "mobile" && cfg.mobileScheduleEnabled ? cfg.mobileSchedule : cfg.weeklySchedule;
+  const day = week?.[dayOfWeek(date)];
+  if (!day || !day.open) return null;
+  if (day.closeHour <= day.openHour) return null;
+  return { openMin: day.openHour * 60, closeMin: day.closeHour * 60 };
+}
+
 export async function getAvailableSlots(
   date: string,
   durationMinutes: number,
   /** Exclude one booking from the busy set — used when rescheduling it. */
   ignoreBookingId?: string,
+  location?: "mobile" | "shop",
 ): Promise<SlotResult[]> {
   const cfg = await getSettings();
-  const openMin = cfg.openHour * 60;
-  const closeMin = cfg.closeHour * 60;
+  const hours = hoursForDate(cfg, date, location);
+  if (!hours) return [];
+  const { openMin, closeMin } = hours;
   const step = cfg.slotIncrementMinutes;
 
   const dayStartISO = zonedTimeToISO(date, 0, cfg.timezone);
@@ -176,6 +196,7 @@ function dayOfWeek(dateStr: string): number {
 export async function getAvailableDays(
   durationMinutes: number,
   ignoreBookingId?: string,
+  location?: "mobile" | "shop",
 ): Promise<DayAvailability[]> {
   const cfg = await getSettings();
   const today = todayInZone(cfg.timezone);
@@ -190,7 +211,7 @@ export async function getAvailableDays(
       days.push({ date, available: false, slotCount: 0, reason: "lead-time" });
       continue;
     }
-    if (cfg.closedDays.includes(dayOfWeek(date))) {
+    if (!hoursForDate(cfg, date, location)) {
       days.push({ date, available: false, slotCount: 0, reason: "closed" });
       continue;
     }
@@ -201,7 +222,7 @@ export async function getAvailableDays(
   const results = await Promise.all(
     candidates.map(async (date) => ({
       date,
-      slots: await getAvailableSlots(date, durationMinutes, ignoreBookingId),
+      slots: await getAvailableSlots(date, durationMinutes, ignoreBookingId, location),
     })),
   );
 

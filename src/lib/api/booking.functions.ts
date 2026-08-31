@@ -76,22 +76,34 @@ async function priceSelection(serviceId: string, addOnIds: string[], location: "
 }
 
 export const getBookableDays = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ serviceId: idSchema, addOnIds: addOnIdsSchema }))
+  .inputValidator(
+    z.object({
+      serviceId: idSchema,
+      addOnIds: addOnIdsSchema,
+      // Mobile jobs can run a different schedule, so availability depends on it.
+      location: z.enum(["mobile", "shop"]).optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const { getAvailableDays } = await import("../availability.server");
     const { durationMinutes } = await priceSelection(data.serviceId, data.addOnIds, null);
-    return { days: await getAvailableDays(durationMinutes) };
+    return { days: await getAvailableDays(durationMinutes, undefined, data.location) };
   });
 
 export const getAvailability = createServerFn({ method: "GET" })
   .inputValidator(
-    z.object({ date: dateSchema, serviceId: idSchema, addOnIds: addOnIdsSchema }),
+    z.object({
+      date: dateSchema,
+      serviceId: idSchema,
+      addOnIds: addOnIdsSchema,
+      location: z.enum(["mobile", "shop"]).optional(),
+    }),
   )
   .handler(async ({ data }) => {
     const { getAvailableSlots } = await import("../availability.server");
     const { durationMinutes } = await priceSelection(data.serviceId, data.addOnIds, null);
 
-    const slots = await getAvailableSlots(data.date, durationMinutes);
+    const slots = await getAvailableSlots(data.date, durationMinutes, undefined, data.location);
     return { slots: slots.map((s) => ({ startTime: s.startTime, startISO: s.startISO })) };
   });
 
@@ -139,7 +151,12 @@ export const createBooking = createServerFn({ method: "POST" })
 
     // Re-check the slot is still open right before booking it — closes
     // the race where two people grab the same slot seconds apart.
-    const freshSlots = await getAvailableSlots(data.date, durationMinutes);
+    const freshSlots = await getAvailableSlots(
+      data.date,
+      durationMinutes,
+      undefined,
+      data.location,
+    );
     const match = freshSlots.find((s) => s.startTime === data.startTime);
     if (!match) {
       throw new Error("That time was just booked by someone else — please pick another slot.");
