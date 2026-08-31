@@ -64,6 +64,8 @@ export interface Booking {
   paymentMethod?: string;
   /** Ids into the `photos` collection — before/after shots of the car. */
   photoIds?: string[];
+  /** Answers to custom form fields, keyed by field id. */
+  customFields?: Record<string, string>;
   notes?: string;
   /** Set when an admin cancels, for the record. */
   cancelledAt?: string;
@@ -152,6 +154,26 @@ export interface Settings {
    */
   mobileScheduleEnabled: boolean;
   mobileSchedule: WeekSchedule;
+  /**
+   * Public URL of the live site. Used for the Google OAuth redirect URI and
+   * SEO canonical/OG tags. Left blank, both fall back to the address of the
+   * incoming request, which is right in dev and behind most proxies.
+   */
+  siteUrl: string;
+
+  // --- SEO / branding ---
+  siteTitle: string;
+  siteTagline: string;
+  siteDescription: string;
+  siteKeywords: string;
+  ogImageUrl: string;
+  faviconUrl: string;
+  twitterHandle: string;
+
+  // --- Calendar event templates ({{vars}}, same set as emails) ---
+  calendarEventTitle: string;
+  calendarEventDescription: string;
+
   /** Google Calendar — configured from /admin/integrations, not env. */
   googleClientId: string;
   googleClientSecret: string;
@@ -184,7 +206,12 @@ export type EmailTrigger =
   | "booking_cancelled";
 
 export interface EmailRule {
-  id: EmailTrigger;
+  /** Built-in ids match EmailTrigger; custom rules get a uuid. */
+  id: string;
+  /** Which event fires it. Custom rules reuse the same trigger points. */
+  trigger?: EmailTrigger;
+  name?: string;
+  custom?: boolean;
   enabled: boolean;
   subject: string;
   body: string;
@@ -201,6 +228,33 @@ export interface EmailLogEntry {
   error?: string;
   bookingId?: string;
   createdAt: string;
+}
+
+export type FieldType = "text" | "textarea" | "select" | "checkbox" | "number" | "date";
+
+export interface FormField {
+  id: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  placeholder?: string;
+  helpText?: string;
+  /** For "select" — the choices offered. */
+  options: string[];
+  /** Empty = show for every package; otherwise only these service ids. */
+  onlyForServices: string[];
+  active: boolean;
+  sortOrder: number;
+}
+
+/** A before/after pair shown on the public site. */
+export interface GalleryPair {
+  id: string;
+  label: string;
+  beforePhotoId: string;
+  afterPhotoId: string;
+  sortOrder: number;
+  active: boolean;
 }
 
 export interface Coupon {
@@ -227,6 +281,8 @@ interface DBShape {
   photos: Photo[];
   emailRules: EmailRule[];
   emailLog: EmailLogEntry[];
+  formFields: FormField[];
+  gallery: GalleryPair[];
   settings: Settings;
 }
 
@@ -262,6 +318,28 @@ export const DEFAULT_SETTINGS: Settings = {
     Number(process.env.BUSINESS_CLOSE_HOUR ?? 17),
     [0],
   ),
+  siteUrl: "",
+  siteTitle: "Detailed by Nate — Premium Auto Detailing",
+  siteTagline: "Make your car look untouchable.",
+  siteDescription:
+    "Premium mobile auto detailing. Hand-washed, ceramic-coated, showroom-perfect. Book online in under 60 seconds.",
+  siteKeywords: "auto detailing, car detailing, ceramic coating, mobile detailing",
+  ogImageUrl: "",
+  faviconUrl: "",
+  twitterHandle: "",
+  calendarEventTitle: "{{service}} — {{fullName}}",
+  calendarEventDescription: `Service: {{service}}
+Add-ons: {{addOns}}
+Total: {{total}}
+Reference: {{reference}}
+
+Client: {{fullName}}
+Phone: {{phone}}
+Email: {{email}}
+Vehicle: {{vehicle}}
+Where: {{location}}
+
+Notes: {{notes}}`,
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN ?? "",
@@ -379,6 +457,8 @@ function emptyDB(): DBShape {
     photos: [],
     emailRules: DEFAULT_EMAIL_RULES.map((r) => ({ ...r })),
     emailLog: [],
+    formFields: [],
+    gallery: [],
     settings: { ...DEFAULT_SETTINGS },
   };
 }
@@ -1095,5 +1175,78 @@ export async function adminSetUserPassword(
     user.passwordHash = passwordHash;
     user.passwordSalt = passwordSalt;
     db.sessions = db.sessions.filter((s) => s.userId !== userId);
+  });
+}
+
+// ---------------------------- Form fields -----------------------------
+
+export async function listFormFields(): Promise<FormField[]> {
+  const db = await ensureDB();
+  return [...db.formFields].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+export async function upsertFormField(field: FormField): Promise<FormField> {
+  return withWriteLock(async (db) => {
+    const i = db.formFields.findIndex((f) => f.id === field.id);
+    if (i >= 0) db.formFields[i] = { ...db.formFields[i], ...field };
+    else db.formFields.push(field);
+    return field;
+  });
+}
+
+export async function deleteFormField(id: string): Promise<void> {
+  await withWriteLock(async (db) => {
+    db.formFields = db.formFields.filter((f) => f.id !== id);
+  });
+}
+
+// ---------------------------- Gallery ---------------------------------
+
+export async function listGallery(): Promise<GalleryPair[]> {
+  const db = await ensureDB();
+  return [...db.gallery].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+export async function upsertGalleryPair(pair: GalleryPair): Promise<GalleryPair> {
+  return withWriteLock(async (db) => {
+    const i = db.gallery.findIndex((g) => g.id === pair.id);
+    if (i >= 0) db.gallery[i] = { ...db.gallery[i], ...pair };
+    else db.gallery.push(pair);
+    return pair;
+  });
+}
+
+export async function deleteGalleryPair(id: string): Promise<GalleryPair | undefined> {
+  return withWriteLock(async (db) => {
+    const pair = db.gallery.find((g) => g.id === id);
+    db.gallery = db.gallery.filter((g) => g.id !== id);
+    return pair;
+  });
+}
+
+// ---------------------- Email rules (incl. custom) ---------------------
+
+export async function createEmailRule(rule: EmailRule): Promise<EmailRule> {
+  return withWriteLock(async (db) => {
+    db.emailRules.push(rule);
+    return rule;
+  });
+}
+
+export async function deleteEmailRule(id: string): Promise<void> {
+  await withWriteLock(async (db) => {
+    // Built-in rules can be disabled but not deleted — the code fires them
+    // by id, so removing one would silently break that hook.
+    db.emailRules = db.emailRules.filter((r) => !(r.id === id && r.custom));
+  });
+}
+
+export async function setBookingCustomFields(
+  bookingId: string,
+  customFields: Record<string, string>,
+): Promise<void> {
+  await withWriteLock(async (db) => {
+    const b = db.bookings.find((x) => x.id === bookingId);
+    if (b) b.customFields = customFields;
   });
 }

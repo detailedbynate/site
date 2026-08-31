@@ -33,10 +33,22 @@ import {
   type ServiceId,
 } from "@/lib/services";
 
+type FormFieldDef = {
+  id: string;
+  label: string;
+  type: "text" | "textarea" | "select" | "checkbox" | "number" | "date";
+  required: boolean;
+  placeholder?: string;
+  helpText?: string;
+  options: string[];
+  onlyForServices: string[];
+};
+
 type Catalog = {
   services: ServiceDef[];
   addOns: AddOnDef[];
   travelFee: number;
+  formFields: FormFieldDef[];
 };
 
 const STEPS = ["Service", "Add-ons", "Location", "Date & time", "Your info", "Review"];
@@ -96,6 +108,8 @@ export function BookingWizard({
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState<ConfirmationDetails | null>(null);
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
 
   // The catalog is editable from /admin/services, so it's fetched rather
   // than imported — prices and packages can change without a redeploy.
@@ -117,6 +131,10 @@ export function BookingWizard({
   }, []);
 
   const services = catalog?.services ?? [];
+  // Fields can be scoped to particular packages, so this depends on the pick.
+  const activeFields = (catalog?.formFields ?? []).filter(
+    (f) => f.onlyForServices.length === 0 || (service && f.onlyForServices.includes(service)),
+  );
   const addOnList = catalog?.addOns ?? [];
   const travelFee = catalog?.travelFee ?? 0;
 
@@ -166,7 +184,13 @@ export function BookingWizard({
     if (step === 3 && (!date || !time)) return "Select a date and a time slot.";
     if (step === 4) {
       const e = validateCustomer(customer);
-      if (Object.keys(e).length) {
+      const ce: Record<string, string> = {};
+      for (const f of activeFields) {
+        const v = (custom[f.id] ?? "").trim();
+        if (f.required && !v) ce[f.id] = `${f.label} is required`;
+      }
+      setCustomErrors(ce);
+      if (Object.keys(e).length || Object.keys(ce).length) {
         setErrors(e);
         return "Please fix the highlighted fields.";
       }
@@ -204,6 +228,11 @@ export function BookingWizard({
             color: customer.color,
           },
           notes: customer.notes.trim() || undefined,
+          customFields: Object.fromEntries(
+            activeFields
+              .map((f) => [f.label, (custom[f.id] ?? "").trim()])
+              .filter(([, v]) => v),
+          ),
         },
       });
 
@@ -451,11 +480,36 @@ export function BookingWizard({
             )}
 
             {step === 4 && (
-              <CustomerInfoStep
-                value={customer}
-                errors={errors}
-                onChange={(patch) => setCustomer((c) => ({ ...c, ...patch }))}
-              />
+              <div className="grid gap-5">
+                <CustomerInfoStep
+                  value={customer}
+                  errors={errors}
+                  onChange={(patch) => setCustomer((c) => ({ ...c, ...patch }))}
+                />
+
+                {activeFields.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0, transition: { delay: 0.12 } }}
+                    className="glass rounded-3xl p-5"
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                      A few more details
+                    </p>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {activeFields.map((f) => (
+                        <CustomFieldInput
+                          key={f.id}
+                          field={f}
+                          value={custom[f.id] ?? ""}
+                          error={customErrors[f.id]}
+                          onChange={(v) => setCustom((c) => ({ ...c, [f.id]: v }))}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             )}
 
             {step === 5 && (
@@ -598,6 +652,77 @@ export function BookingWizard({
 
       <ConfirmationModal open={!!confirmed} details={confirmed} onClose={closeConfirmation} />
     </div>
+  );
+}
+
+const fieldCls =
+  "mt-1.5 w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/15";
+
+function CustomFieldInput({
+  field,
+  value,
+  error,
+  onChange,
+}: {
+  field: FormFieldDef;
+  value: string;
+  error?: string;
+  onChange: (v: string) => void;
+}) {
+  const label = (
+    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {field.label}
+      {field.required && <span className="text-destructive"> *</span>}
+    </span>
+  );
+
+  return (
+    <label className={field.type === "textarea" ? "block sm:col-span-2" : "block"}>
+      {label}
+      {field.type === "textarea" ? (
+        <textarea
+          className={`${fieldCls} min-h-[88px] resize-y`}
+          value={value}
+          placeholder={field.placeholder}
+          maxLength={500}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : field.type === "select" ? (
+        <select className={fieldCls} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select…</option>
+          {field.options.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : field.type === "checkbox" ? (
+        <span className="mt-2 flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            checked={value === "Yes"}
+            onChange={(e) => onChange(e.target.checked ? "Yes" : "")}
+            className="h-4 w-4 rounded border-border accent-[var(--primary)]"
+          />
+          <span className="text-sm text-foreground">{field.placeholder || "Yes"}</span>
+        </span>
+      ) : (
+        <input
+          type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+          className={fieldCls}
+          value={value}
+          placeholder={field.placeholder}
+          maxLength={200}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {field.helpText && !error && (
+        <span className="mt-1 block text-[11px] text-muted-foreground">{field.helpText}</span>
+      )}
+      {error && (
+        <span className="mt-1 block text-[11px] font-semibold text-destructive">{error}</span>
+      )}
+    </label>
   );
 }
 

@@ -15,6 +15,7 @@ import {
   Package,
   Plug,
   Receipt,
+  Search,
   Settings,
   Sparkles,
   Tag,
@@ -76,7 +77,8 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
       { to: "/admin/settings", label: "Settings", icon: Settings },
       { to: "/admin/automation", label: "Automation", icon: Workflow, soon: true },
       { to: "/admin/integrations", label: "Integrations", icon: Plug },
-      { to: "/admin/form-fields", label: "Form Fields", icon: FileInput, soon: true },
+      { to: "/admin/seo", label: "SEO & branding", icon: Search },
+      { to: "/admin/form-fields", label: "Form Fields", icon: FileInput },
     ],
   },
 ];

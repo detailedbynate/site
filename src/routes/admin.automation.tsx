@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Mail, Play, Save, Send } from "lucide-react";
+import { AlertTriangle, Mail, Play, Plus, Save, Send, Trash2, Workflow, X } from "lucide-react";
 
 import {
+  createCustomRule,
   getAutomation,
+  removeCustomRule,
   runAutomationNow,
   saveEmailRule,
   saveEmailSettings,
@@ -17,6 +19,7 @@ import {
   PageHeader,
   Spinner,
   SuccessNote,
+  Portal,
   ToggleChip,
   inputCls,
 } from "@/components/admin/ui";
@@ -71,6 +74,14 @@ function Automation() {
   const [drafts, setDrafts] = useState<Record<string, Rule>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  type NewRule = {
+    name: string;
+    trigger: "booking_confirmed" | "reminder" | "after_service" | "booking_cancelled";
+    subject: string;
+    body: string;
+    offsetHours: number;
+  };
+  const [newRule, setNewRule] = useState<NewRule | null>(null);
 
   // Email credentials
   const [apiKey, setApiKey] = useState("");
@@ -106,7 +117,7 @@ function Automation() {
     try {
       await saveEmailRule({
         data: {
-          id: rule.id,
+          id: rule.id as never,
           enabled: rule.enabled,
           subject: rule.subject,
           body: rule.body,
@@ -243,10 +254,45 @@ function Automation() {
         </Button>
       </GlassCard>
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[15px] font-semibold tracking-tight text-foreground">Workflows</p>
+          <p className="text-[12.5px] text-muted-foreground">
+            The four built-in ones can be edited or switched off. Add your own to send extra
+            emails at the same trigger points.
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          onClick={() =>
+            setNewRule({
+              name: "",
+              trigger: "after_service",
+              subject: "",
+              body: "",
+              offsetHours: 24,
+            })
+          }
+        >
+          <Plus className="h-3.5 w-3.5" /> New workflow
+        </Button>
+      </div>
+
       <div className="space-y-4">
         {data.rules.map((rule, i) => {
           const draft = drafts[rule.id] ?? rule;
-          const meta = META[rule.id];
+          const meta = rule.custom
+            ? {
+                title: rule.name ?? "Custom workflow",
+                blurb: "Custom workflow",
+                timing:
+                  rule.trigger === "reminder"
+                    ? "hours before the appointment"
+                    : rule.trigger === "after_service"
+                      ? "hours after the job ends"
+                      : undefined,
+              }
+            : META[rule.id];
           const dirty = JSON.stringify(draft) !== JSON.stringify(rule);
           return (
             <GlassCard key={rule.id} index={i} className="p-6">
@@ -257,13 +303,28 @@ function Automation() {
                   </p>
                   <p className="mt-0.5 text-[12.5px] text-muted-foreground">{meta.blurb}</p>
                 </div>
-                <ToggleChip
-                  on={draft.enabled}
-                  labels={["On", "Off"]}
-                  onChange={(next) =>
-                    setDrafts({ ...drafts, [rule.id]: { ...draft, enabled: next } })
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <ToggleChip
+                    on={draft.enabled}
+                    labels={["On", "Off"]}
+                    onChange={(next) =>
+                      setDrafts({ ...drafts, [rule.id]: { ...draft, enabled: next } })
+                    }
+                  />
+                  {rule.custom && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        if (!confirm("Delete this workflow?")) return;
+                        await removeCustomRule({ data: { id: rule.id } });
+                        await load();
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="mt-5 space-y-4">
@@ -342,6 +403,139 @@ function Automation() {
           );
         })}
       </div>
+
+      <AnimatePresence>
+        {newRule && (
+          <Portal>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setNewRule(null)}
+              className="admin-theme fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]"
+            >
+              <motion.div
+                initial={{ scale: 0.96, y: 16 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.98, y: 8 }}
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Workflow className="h-4 w-4 text-primary" />
+                    <h2 className="text-lg font-bold tracking-tight text-foreground">
+                      New workflow
+                    </h2>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => setNewRule(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <Field label="Name" hint="Just for you - customers never see it.">
+                    <input
+                      className={inputCls}
+                      value={newRule.name}
+                      maxLength={80}
+                      placeholder="Second review nudge"
+                      onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="When should it send?">
+                    <select
+                      className={inputCls}
+                      value={newRule.trigger}
+                      onChange={(e) =>
+                        setNewRule({
+                          ...newRule,
+                          trigger: e.target.value as NewRule["trigger"],
+                        })
+                      }
+                    >
+                      <option value="booking_confirmed">When a booking is made</option>
+                      <option value="reminder">Before the appointment</option>
+                      <option value="after_service">After the job is finished</option>
+                      <option value="booking_cancelled">When a booking is cancelled</option>
+                    </select>
+                  </Field>
+
+                  {(newRule.trigger === "reminder" || newRule.trigger === "after_service") && (
+                    <Field label="Hours offset">
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        max={720}
+                        value={newRule.offsetHours}
+                        onChange={(e) =>
+                          setNewRule({ ...newRule, offsetHours: Number(e.target.value) })
+                        }
+                      />
+                    </Field>
+                  )}
+
+                  <Field label="Subject">
+                    <input
+                      className={inputCls}
+                      value={newRule.subject}
+                      maxLength={200}
+                      onChange={(e) => setNewRule({ ...newRule, subject: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Message">
+                    <textarea
+                      className={`${inputCls} min-h-[150px] resize-y font-mono text-[12.5px]`}
+                      value={newRule.body}
+                      maxLength={5000}
+                      onChange={(e) => setNewRule({ ...newRule, body: e.target.value })}
+                    />
+                  </Field>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] text-muted-foreground">Insert:</span>
+                    {VARS.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setNewRule({ ...newRule, body: `${newRule.body}{{${v}}}` })}
+                        className="rounded-md bg-white/[0.05] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.1] hover:text-foreground"
+                      >
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button onClick={() => setNewRule(null)}>Cancel</Button>
+                  <Button
+                    variant="primary"
+                    disabled={
+                      !newRule.name.trim() || !newRule.subject.trim() || !newRule.body.trim()
+                    }
+                    onClick={async () => {
+                      try {
+                        await createCustomRule({ data: { ...newRule, enabled: true } });
+                        setNewRule(null);
+                        flash("Workflow created.");
+                        await load();
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : "Could not create it.");
+                      }
+                    }}
+                  >
+                    Create workflow
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          </Portal>
+        )}
+      </AnimatePresence>
 
       <GlassCard className="mt-5 p-6">
         <div className="flex items-center gap-2.5">

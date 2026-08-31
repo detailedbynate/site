@@ -59,9 +59,22 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
     vehicle: booking.vehicle
       ? `${booking.vehicle.year} ${booking.vehicle.make} ${booking.vehicle.model}`
       : "your vehicle",
+    notes: booking.notes ?? "None",
     business: settings.businessName,
     businessPhone: settings.contactPhone,
     businessEmail: settings.contactEmail,
+  };
+}
+
+/** Placeholder values so a template can be previewed with no bookings yet. */
+export function sampleVars(): Record<string, string> {
+  return {
+    name: "Alex", fullName: "Alex Carter", email: "alex@email.com", phone: "(705) 555-0142",
+    service: "Diamond", addOns: "Pet hair removal", date: "Friday, September 4",
+    time: "10:00 AM", reference: "DBN-1234", total: "$444",
+    location: "Mobile — 450 Great Northern Rd", vehicle: "2021 BMW M340i",
+    business: "Detailed by Nate", businessPhone: "(705) 555-0100",
+    businessEmail: "book@detailedbynate.com", notes: "Gate code 4417",
   };
 }
 
@@ -108,7 +121,7 @@ export async function sendEmail(input: {
 export async function runTrigger(
   trigger: EmailTrigger,
   booking: Booking,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; ruleId?: string } = {},
 ): Promise<{ status: "sent" | "failed" | "skipped"; error?: string }> {
   const [rules, settings, client] = await Promise.all([
     listEmailRules(),
@@ -116,7 +129,9 @@ export async function runTrigger(
     findClientById(booking.clientId),
   ]);
 
-  const rule = rules.find((r) => r.id === trigger);
+  const rule = opts.ruleId
+    ? rules.find((r) => r.id === opts.ruleId)
+    : rules.find((r) => r.id === trigger);
   // Log the rendered subject, not the raw template — the log is meant to show
   // what the customer actually saw in their inbox.
   const vars = rule ? await buildVars(booking) : null;
@@ -126,7 +141,7 @@ export async function runTrigger(
     await logEmail({
       to: client?.email ?? "unknown",
       subject: renderedSubject,
-      trigger,
+      trigger: (rule?.trigger ?? trigger) as EmailTrigger,
       status,
       error,
       bookingId: booking.id,
@@ -138,7 +153,7 @@ export async function runTrigger(
   if (!rule.enabled && !opts.force) return record("skipped", "Rule is turned off.");
   if (!client?.email) return record("skipped", "Customer has no email address.");
   if (!isEmailConfigured(settings)) return record("skipped", "Email is not configured.");
-  if (!opts.force && (await hasEmailBeenSent(booking.id, trigger))) {
+  if (!opts.force && !rule.custom && (await hasEmailBeenSent(booking.id, trigger))) {
     return record("skipped", "Already sent for this booking.");
   }
 
@@ -149,6 +164,25 @@ export async function runTrigger(
   });
 
   return error ? record("failed", error) : record("sent");
+}
+
+/**
+ * Fire the built-in rule for `trigger` plus any custom rules the owner has
+ * attached to the same trigger point.
+ */
+export async function runTriggerAndCustom(
+  trigger: EmailTrigger,
+  booking: Booking,
+): Promise<void> {
+  await runTrigger(trigger, booking).catch(() => undefined);
+
+  const rules = await listEmailRules();
+  for (const rule of rules) {
+    if (!rule.custom || !rule.enabled || rule.trigger !== trigger) continue;
+    // Time-based custom rules are handled by processScheduledEmails instead.
+    if (trigger === "reminder" || trigger === "after_service") continue;
+    await runTrigger(trigger, booking, { ruleId: rule.id }).catch(() => undefined);
+  }
 }
 
 /**
@@ -170,7 +204,8 @@ export async function processScheduledEmails(): Promise<{ sent: number; checked:
 
   for (const rule of rules) {
     if (!rule.enabled) continue;
-    if (rule.id !== "reminder" && rule.id !== "after_service") continue;
+    const point = rule.custom ? rule.trigger : (rule.id as EmailTrigger);
+    if (point !== "reminder" && point !== "after_service") continue;
 
     for (const booking of bookings) {
       if (booking.status === "cancelled") continue;
@@ -181,18 +216,19 @@ export async function processScheduledEmails(): Promise<{ sent: number; checked:
       if (Number.isNaN(start)) continue;
 
       const dueAt =
-        rule.id === "reminder"
+        point === "reminder"
           ? start - rule.offsetHours * 3_600_000
           : start + booking.durationMinutes * 60_000 + rule.offsetHours * 3_600_000;
 
       if (now < dueAt) continue;
       // Don't send a reminder for something that already happened, or spam
       // follow-ups for ancient jobs on first run.
-      if (rule.id === "reminder" && now > start) continue;
-      if (rule.id === "after_service" && now > dueAt + 7 * 86_400_000) continue;
+      if (point === "reminder" && now > start) continue;
+      if (point === "after_service" && now > dueAt + 7 * 86_400_000) continue;
 
-      if (await hasEmailBeenSent(booking.id, rule.id)) continue;
-      const result = await runTrigger(rule.id, booking);
+      // Built-ins de-dupe by trigger; custom rules must not block each other.
+      if (!rule.custom && (await hasEmailBeenSent(booking.id, point))) continue;
+      const result = await runTrigger(point, booking, rule.custom ? { ruleId: rule.id } : {});
       if (result.status === "sent") sent += 1;
     }
   }

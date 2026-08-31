@@ -15,12 +15,9 @@ import { useBookingModal } from "@/components/booking/BookingModal";
 import type { ServiceId } from "@/lib/services";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Detailed by Nate — Premium Auto Detailing" },
-      { name: "description", content: "Hand-detailed perfection. Ceramic coating, paint correction, full interior. Book your slot today." },
-    ],
-  }),
+  // No head override here on purpose: the homepage's title and description
+  // come from the root route, which reads them from /admin/seo. A hardcoded
+  // title here would silently win and make that page look broken.
   component: Index,
 });
 

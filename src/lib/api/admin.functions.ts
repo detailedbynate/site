@@ -145,9 +145,9 @@ export const setBookingStatus = createServerFn({ method: "POST" })
     const booking = await updateBookingStatus(data.bookingId, data.status, data.reason);
 
     if (data.status === "cancelled" && booking) {
-      const { runTrigger } = await import("../email.server");
+      const { runTriggerAndCustom } = await import("../email.server");
       // Fire-and-forget: a mail failure must not block freeing the slot.
-      void runTrigger("booking_cancelled", booking).catch(() => undefined);
+      void runTriggerAndCustom("booking_cancelled", booking).catch(() => undefined);
     }
 
     if (data.status === "cancelled" && existing.googleEventId) {
@@ -953,6 +953,13 @@ export const getSales = createServerFn({ method: "GET" })
 
 /** The redirect URI Google must have registered. Derived from the request. */
 async function currentRedirectUri(): Promise<string> {
+  const { getSettings } = await import("../db.server");
+  const settings = await getSettings();
+
+  // Behind a proxy the request origin can be the internal address, so an
+  // explicitly configured Site URL wins when it's set.
+  if (settings.siteUrl) return `${settings.siteUrl.replace(/\/+$/, "")}/admin/integrations`;
+
   const { getRequestUrl } = await import("@tanstack/react-start/server");
   const url = getRequestUrl({ xForwardedHost: true, xForwardedProto: true });
   return `${url.origin}/admin/integrations`;
@@ -1084,3 +1091,214 @@ export const disconnectGoogle = createServerFn({ method: "POST" }).handler(async
   await updateSettings({ googleRefreshToken: "", googleAccountEmail: "" });
   return { ok: true };
 });
+
+// ============================ Site / SEO ================================
+
+export const saveSiteSettings = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      siteUrl: z.string().max(200),
+      siteTitle: z.string().min(1).max(120),
+      siteTagline: z.string().max(160),
+      siteDescription: z.string().max(320),
+      siteKeywords: z.string().max(300),
+      ogImageUrl: z.string().max(500),
+      faviconUrl: z.string().max(500),
+      twitterHandle: z.string().max(40),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const url = data.siteUrl.trim().replace(/\/+$/, "");
+    if (url && !/^https?:\/\//i.test(url)) {
+      throw new Error("Site URL must start with http:// or https://");
+    }
+    return { settings: await updateSettings({ ...data, siteUrl: url }) };
+  });
+
+export const saveCalendarTemplates = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      calendarEventTitle: z.string().min(1).max(300),
+      calendarEventDescription: z.string().max(4000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    return { settings: await updateSettings(data) };
+  });
+
+/** Render the calendar templates against a real (or sample) booking. */
+export const previewCalendarTemplate = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      title: z.string().max(300),
+      description: z.string().max(4000),
+      bookingId: idSchema.optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { listBookings } = await import("../db.server");
+    const { buildVars, renderTemplate, sampleVars } = await import("../email.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const bookings = await listBookings();
+    const booking = data.bookingId
+      ? bookings.find((b) => b.id === data.bookingId)
+      : bookings.at(-1);
+
+    const vars = booking ? await buildVars(booking) : sampleVars();
+    return {
+      title: renderTemplate(data.title, vars),
+      description: renderTemplate(data.description, vars),
+      usedSample: !booking,
+    };
+  });
+
+// ============================ Form fields ===============================
+
+export const listAdminFormFields = createServerFn({ method: "GET" }).handler(async () => {
+  const { listFormFields, listServices } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  const [fields, services] = await Promise.all([listFormFields(), listServices()]);
+  return { fields, services: services.map((s) => ({ id: s.id, title: s.title })) };
+});
+
+export const saveFormField = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: idSchema.optional(),
+      label: z.string().min(1).max(80),
+      type: z.enum(["text", "textarea", "select", "checkbox", "number", "date"]),
+      required: z.boolean(),
+      placeholder: z.string().max(120).optional(),
+      helpText: z.string().max(200).optional(),
+      options: z.array(z.string().min(1).max(60)).max(30).default([]),
+      onlyForServices: z.array(idSchema).max(30).default([]),
+      active: z.boolean(),
+      sortOrder: z.number().int().min(0).max(999),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { upsertFormField } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    const { randomUUID } = await import("node:crypto");
+    await requireUser();
+
+    if (data.type === "select" && data.options.length === 0) {
+      throw new Error("A dropdown needs at least one option.");
+    }
+    return { field: await upsertFormField({ ...data, id: data.id ?? randomUUID() }) };
+  });
+
+export const removeFormField = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: idSchema }))
+  .handler(async ({ data }) => {
+    const { deleteFormField } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    await deleteFormField(data.id);
+    return { ok: true };
+  });
+
+// ============================ Gallery ===================================
+
+export const listAdminGallery = createServerFn({ method: "GET" }).handler(async () => {
+  const { listGallery } = await import("../db.server");
+  const { readPhotoDataUrl } = await import("../uploads.server");
+  const { findPhoto } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  const pairs = await listGallery();
+  const withImages = await Promise.all(
+    pairs.map(async (p) => {
+      const [b, a] = await Promise.all([findPhoto(p.beforePhotoId), findPhoto(p.afterPhotoId)]);
+      return {
+        ...p,
+        beforeUrl: b ? await readPhotoDataUrl(b.id, b.mime) : null,
+        afterUrl: a ? await readPhotoDataUrl(a.id, a.mime) : null,
+      };
+    }),
+  );
+  return { pairs: withImages };
+});
+
+export const saveGalleryPair = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: idSchema.optional(),
+      label: z.string().min(1).max(80),
+      beforePhotoId: idSchema,
+      afterPhotoId: idSchema,
+      sortOrder: z.number().int().min(0).max(999).default(0),
+      active: z.boolean().default(true),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { upsertGalleryPair } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    const { randomUUID } = await import("node:crypto");
+    await requireUser();
+    return { pair: await upsertGalleryPair({ ...data, id: data.id ?? randomUUID() }) };
+  });
+
+export const removeGalleryPair = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: idSchema }))
+  .handler(async ({ data }) => {
+    const { deleteGalleryPair, deletePhoto } = await import("../db.server");
+    const { deletePhotoFile } = await import("../uploads.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const pair = await deleteGalleryPair(data.id);
+    // Gallery photos aren't attached to a booking, so nothing else references
+    // them — clean the files up rather than orphaning them on disk.
+    for (const pid of [pair?.beforePhotoId, pair?.afterPhotoId].filter(Boolean) as string[]) {
+      const photo = await deletePhoto(pid);
+      if (photo) await deletePhotoFile(photo.id, photo.mime);
+    }
+    return { ok: true };
+  });
+
+// ==================== Automation: custom workflows ======================
+
+export const createCustomRule = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      name: z.string().min(1).max(80),
+      trigger: z.enum(["booking_confirmed", "reminder", "after_service", "booking_cancelled"]),
+      subject: z.string().min(1).max(200),
+      body: z.string().min(1).max(5000),
+      offsetHours: z.number().int().min(0).max(720),
+      enabled: z.boolean().default(true),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { createEmailRule } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    const { randomUUID } = await import("node:crypto");
+    await requireUser();
+
+    return {
+      rule: await createEmailRule({ ...data, id: randomUUID(), custom: true }),
+    };
+  });
+
+export const removeCustomRule = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: idSchema }))
+  .handler(async ({ data }) => {
+    const { deleteEmailRule } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    await deleteEmailRule(data.id);
+    return { ok: true };
+  });

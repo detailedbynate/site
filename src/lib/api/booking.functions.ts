@@ -17,12 +17,13 @@ const addOnIdsSchema = z.array(idSchema).max(20).default([]);
  * has identified themselves. Only `active` items are returned.
  */
 export const getCatalog = createServerFn({ method: "GET" }).handler(async () => {
-  const { listServices, listAddOns, getSettings } = await import("../db.server");
+  const { listServices, listAddOns, getSettings, listFormFields } = await import("../db.server");
 
-  const [services, addOns, settings] = await Promise.all([
+  const [services, addOns, settings, formFields] = await Promise.all([
     listServices(),
     listAddOns(),
     getSettings(),
+    listFormFields(),
   ]);
 
   return {
@@ -45,6 +46,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
         durationMinutes,
       })),
     travelFee: settings.travelFee,
+    formFields: formFields.filter((f) => f.active),
     business: {
       name: settings.businessName,
       email: settings.contactEmail,
@@ -127,6 +129,7 @@ export const createBooking = createServerFn({ method: "POST" })
           color: z.string().min(1).max(30),
         }),
         notes: z.string().max(1000).optional(),
+        customFields: z.record(z.string().max(60), z.string().max(500)).default({}),
       })
       // Mobile jobs need somewhere to drive to. Enforced server-side so the
       // client validation isn't the only thing standing between a mobile
@@ -218,11 +221,57 @@ export const createBooking = createServerFn({ method: "POST" })
       googleEventId: googleEventId ?? undefined,
     });
 
+    if (Object.keys(data.customFields).length) {
+      const { setBookingCustomFields } = await import("../db.server");
+      await setBookingCustomFields(booking.id, data.customFields);
+    }
+
     // Confirmation email. Fire-and-forget and never throws — the booking is
     // already saved, and a mail outage must not fail the customer's booking.
     void import("../email.server")
-      .then(({ runTrigger }) => runTrigger("booking_confirmed", booking))
+      .then(({ runTriggerAndCustom }) => runTriggerAndCustom("booking_confirmed", booking))
       .catch(() => undefined);
 
     return { booking, client };
   });
+
+/**
+ * Public SEO/branding values for the site's <head>. Public on purpose —
+ * these end up in meta tags that crawlers read.
+ */
+export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const s = await getSettings();
+  return {
+    title: s.siteTitle,
+    tagline: s.siteTagline,
+    description: s.siteDescription,
+    keywords: s.siteKeywords,
+    ogImageUrl: s.ogImageUrl,
+    faviconUrl: s.faviconUrl,
+    twitterHandle: s.twitterHandle,
+    siteUrl: s.siteUrl,
+    businessName: s.businessName,
+  };
+});
+
+/** Before/after pairs for the public gallery. */
+export const getPublicGallery = createServerFn({ method: "GET" }).handler(async () => {
+  const { listGallery, findPhoto } = await import("../db.server");
+  const { readPhotoDataUrl } = await import("../uploads.server");
+
+  const pairs = (await listGallery()).filter((p) => p.active);
+  return {
+    pairs: await Promise.all(
+      pairs.map(async (p) => {
+        const [b, a] = await Promise.all([findPhoto(p.beforePhotoId), findPhoto(p.afterPhotoId)]);
+        return {
+          id: p.id,
+          label: p.label,
+          beforeUrl: b ? await readPhotoDataUrl(b.id, b.mime) : null,
+          afterUrl: a ? await readPhotoDataUrl(a.id, a.mime) : null,
+        };
+      }),
+    ),
+  };
+});

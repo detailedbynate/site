@@ -14,6 +14,9 @@ import {
 } from "lucide-react";
 
 import {
+  getAdminSettings,
+  previewCalendarTemplate,
+  saveCalendarTemplates,
   completeGoogleConnect,
   disconnectGoogle,
   getGoogleConsentUrl,
@@ -352,6 +355,8 @@ function Integrations() {
         )}
       </GlassCard>
 
+      <CalendarTemplateCard />
+
       <GlassCard className="mt-5 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -397,6 +402,145 @@ function Integrations() {
         </p>
       </GlassCard>
     </>
+  );
+}
+
+const CAL_VARS = [
+  "service","addOns","fullName","name","phone","email","vehicle","location",
+  "date","time","total","reference","notes","customFields","business","businessPhone",
+];
+
+/** Lets the owner control exactly what a synced calendar event says. */
+function CalendarTemplateCard() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [preview, setPreview] = useState<{ title: string; description: string; usedSample: boolean } | null>(null);
+
+  useEffect(() => {
+    getAdminSettings()
+      .then((r) => {
+        setTitle(r.settings.calendarEventTitle);
+        setBody(r.settings.calendarEventDescription);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  if (!loaded) return null;
+
+  return (
+    <GlassCard className="mt-5 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <CalendarCheck className="h-4 w-4 text-primary" />
+            <p className="text-[15px] font-semibold tracking-tight text-foreground">
+              Calendar event template
+            </p>
+          </div>
+          <p className="mt-1 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground">
+            What each synced event says in Google Calendar. Click a tag to insert it.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                setPreview(await previewCalendarTemplate({ data: { title, description: body } }));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Preview
+          </Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={async () => {
+              setBusy(true);
+              setMsg(null);
+              try {
+                await saveCalendarTemplates({
+                  data: { calendarEventTitle: title, calendarEventDescription: body },
+                });
+                setMsg({ ok: true, text: "Saved. New bookings will use this." });
+              } catch (e) {
+                setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't save." });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save template
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        <Field label="Event title">
+          <input
+            className={inputCls}
+            value={title}
+            maxLength={300}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </Field>
+        <Field label="Event description">
+          <textarea
+            className={`${inputCls} min-h-[180px] resize-y font-mono text-[12.5px] leading-relaxed`}
+            value={body}
+            maxLength={4000}
+            onChange={(e) => setBody(e.target.value)}
+          />
+        </Field>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] text-muted-foreground">Insert:</span>
+          {CAL_VARS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setBody((b) => `${b}{{${v}}}`)}
+              className="rounded-md bg-white/[0.05] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.1] hover:text-foreground"
+            >
+              {`{{${v}}}`}
+            </button>
+          ))}
+        </div>
+
+        <AnimatePresence>
+          {msg &&
+            (msg.ok ? <SuccessNote>{msg.text}</SuccessNote> : <ErrorNote>{msg.text}</ErrorNote>)}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {preview && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Preview{preview.usedSample ? " (sample data — no bookings yet)" : ""}
+                </p>
+                <p className="text-[14px] font-semibold text-foreground">{preview.title}</p>
+                <pre className="mt-2 whitespace-pre-wrap font-sans text-[12.5px] leading-relaxed text-muted-foreground">
+                  {preview.description}
+                </pre>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </GlassCard>
   );
 }
 
