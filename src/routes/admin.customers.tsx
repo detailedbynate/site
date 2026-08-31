@@ -22,6 +22,7 @@ import {
 } from "@/lib/api/admin.functions";
 import { CsvImport } from "@/components/admin/CsvImport";
 import {
+  Portal,
   Avatar,
   Button,
   DetailField,
@@ -325,7 +326,7 @@ function Customers() {
         )}
       </DetailPanel>
 
-      <AnimatePresence>
+      <Portal><AnimatePresence>
         {draft && (
           <div
             onClick={() => setDraft(null)}
@@ -333,7 +334,7 @@ function Customers() {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
             >
               <div className="flex items-start justify-between">
                 <h2 className="text-lg font-bold tracking-tight text-foreground">
@@ -390,7 +391,7 @@ function Customers() {
             </div>
           </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence></Portal>
     </>
   );
 }

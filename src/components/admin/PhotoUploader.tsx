@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { ImagePlus, Loader2, Trash2, X } from "lucide-react";
 
 import { deletePhotoById, getPhotos, uploadPhoto } from "@/lib/api/admin.functions";
-import { Button, ErrorNote } from "./ui";
+import {
+  Portal, Button, ErrorNote } from "./ui";
 
 type Photo = Awaited<ReturnType<typeof getPhotos>>["photos"][number];
 
@@ -179,7 +180,7 @@ export function PhotoUploader({ bookingId }: { bookingId: string }) {
         </div>
       )}
 
-      <AnimatePresence>
+      <Portal><AnimatePresence>
         {lightbox && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -218,7 +219,7 @@ export function PhotoUploader({ bookingId }: { bookingId: string }) {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence></Portal>
     </div>
   );
 }

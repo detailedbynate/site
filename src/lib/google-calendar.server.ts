@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { getServerConfig, isGoogleCalendarConfigured } from "./config.server";
 import { getSettings } from "./db.server";
 
 // --------------------------------------------------------------------------
@@ -13,15 +12,29 @@ import { getSettings } from "./db.server";
 // this once during setup.
 // --------------------------------------------------------------------------
 
-function getAuthedClient() {
-  const cfg = getServerConfig();
-  const auth = new google.auth.OAuth2(cfg.googleClientId, cfg.googleClientSecret);
-  auth.setCredentials({ refresh_token: cfg.googleRefreshToken });
+/** Credentials live in the DB so they can be changed from /admin/integrations. */
+export async function isGoogleCalendarConfigured(): Promise<boolean> {
+  const s = await getSettings();
+  return Boolean(s.googleClientId && s.googleClientSecret && s.googleRefreshToken);
+}
+
+export function buildOAuthClient(
+  clientId: string,
+  clientSecret: string,
+  redirectUri?: string,
+) {
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+async function getAuthedClient() {
+  const s = await getSettings();
+  const auth = buildOAuthClient(s.googleClientId, s.googleClientSecret);
+  auth.setCredentials({ refresh_token: s.googleRefreshToken });
   return auth;
 }
 
-function getCalendarClient() {
-  return google.calendar({ version: "v3", auth: getAuthedClient() });
+async function getCalendarClient() {
+  return google.calendar({ version: "v3", auth: await getAuthedClient() });
 }
 
 export interface BusyInterval {
@@ -36,22 +49,21 @@ export interface BusyInterval {
  * you've wired up credentials — see README.
  */
 export async function getBusyIntervals(timeMinISO: string, timeMaxISO: string): Promise<BusyInterval[]> {
-  if (!isGoogleCalendarConfigured()) return [];
+  if (!(await isGoogleCalendarConfigured())) return [];
 
-  const cfg = getServerConfig();
   const settings = await getSettings();
-  const calendar = getCalendarClient();
+  const calendar = await getCalendarClient();
 
   const res = await calendar.freebusy.query({
     requestBody: {
       timeMin: timeMinISO,
       timeMax: timeMaxISO,
       timeZone: settings.timezone,
-      items: [{ id: cfg.googleCalendarId }],
+      items: [{ id: settings.googleCalendarId }],
     },
   });
 
-  const busy = res.data.calendars?.[cfg.googleCalendarId]?.busy ?? [];
+  const busy = res.data.calendars?.[settings.googleCalendarId]?.busy ?? [];
   return busy
     .filter((b): b is { start: string; end: string } => Boolean(b.start && b.end))
     .map((b) => ({ start: b.start, end: b.end }));
@@ -74,14 +86,13 @@ export interface CreateEventInput {
  * saves locally either way.
  */
 export async function createCalendarEvent(input: CreateEventInput): Promise<string | null> {
-  if (!isGoogleCalendarConfigured()) return null;
+  if (!(await isGoogleCalendarConfigured())) return null;
 
-  const cfg = getServerConfig();
   const settings = await getSettings();
-  const calendar = getCalendarClient();
+  const calendar = await getCalendarClient();
 
   const res = await calendar.events.insert({
-    calendarId: cfg.googleCalendarId,
+    calendarId: settings.googleCalendarId,
     sendUpdates: input.attendeeEmail ? "all" : "none",
     requestBody: {
       summary: input.summary,
@@ -98,10 +109,108 @@ export async function createCalendarEvent(input: CreateEventInput): Promise<stri
 }
 
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
-  if (!isGoogleCalendarConfigured()) return;
-  const cfg = getServerConfig();
-  const calendar = getCalendarClient();
-  await calendar.events.delete({ calendarId: cfg.googleCalendarId, eventId }).catch(() => {
+  if (!(await isGoogleCalendarConfigured())) return;
+  const settings = await getSettings();
+  const calendar = await getCalendarClient();
+  await calendar.events.delete({ calendarId: settings.googleCalendarId, eventId }).catch(() => {
     // Event may already be gone — not fatal for a status update.
   });
+}
+
+// --------------------------------------------------------------------------
+// OAuth connect flow, driven entirely from /admin/integrations so nobody has
+// to run a CLI script. The owner registers a redirect URI once in Google
+// Cloud Console, then clicks Connect and approves in the browser.
+// --------------------------------------------------------------------------
+
+const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+
+export function buildConsentUrl(
+  clientId: string,
+  clientSecret: string,
+  redirectUri: string,
+): string {
+  return buildOAuthClient(clientId, clientSecret, redirectUri).generateAuthUrl({
+    access_type: "offline",
+    scope: SCOPES,
+    // Without this Google only returns a refresh token the *first* time an
+    // account authorises the app, so re-connecting would silently yield none.
+    prompt: "consent",
+    include_granted_scopes: true,
+  });
+}
+
+/** Swap the ?code= from the redirect for a long-lived refresh token. */
+export async function exchangeCodeForToken(
+  clientId: string,
+  clientSecret: string,
+  redirectUri: string,
+  code: string,
+): Promise<{ refreshToken: string; email: string }> {
+  const client = buildOAuthClient(clientId, clientSecret, redirectUri);
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google didn't return a refresh token. Remove this app at " +
+        "myaccount.google.com/permissions and connect again.",
+    );
+  }
+
+  client.setCredentials(tokens);
+  let email = "";
+  try {
+    const info = await google.oauth2({ version: "v2", auth: client }).userinfo.get();
+    email = info.data.email ?? "";
+  } catch {
+    // Not fatal — we only use this for display.
+  }
+
+  return { refreshToken: tokens.refresh_token, email };
+}
+
+export interface CalendarOption {
+  id: string;
+  summary: string;
+  primary: boolean;
+  accessRole: string;
+}
+
+/** Calendars the connected account can write to. */
+export async function listCalendars(): Promise<CalendarOption[]> {
+  if (!(await isGoogleCalendarConfigured())) return [];
+  const calendar = await getCalendarClient();
+  const res = await calendar.calendarList.list({ maxResults: 100 });
+
+  return (res.data.items ?? [])
+    .filter((c) => c.id && (c.accessRole === "owner" || c.accessRole === "writer"))
+    .map((c) => ({
+      id: c.id!,
+      summary: c.summary ?? c.id!,
+      primary: Boolean(c.primary),
+      accessRole: c.accessRole ?? "",
+    }));
+}
+
+/** Round-trip check so the owner gets a definite yes/no. */
+export async function testConnection(): Promise<{ ok: boolean; detail: string }> {
+  if (!(await isGoogleCalendarConfigured())) {
+    return { ok: false, detail: "Not connected yet." };
+  }
+  try {
+    const settings = await getSettings();
+    const calendar = await getCalendarClient();
+    const cal = await calendar.calendars.get({ calendarId: settings.googleCalendarId });
+    const now = new Date();
+    const busy = await getBusyIntervals(
+      now.toISOString(),
+      new Date(now.getTime() + 7 * 86_400_000).toISOString(),
+    );
+    return {
+      ok: true,
+      detail: `Connected to "${cal.data.summary}". ${busy.length} busy block(s) in the next 7 days.`,
+    };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : "Connection failed." };
+  }
 }

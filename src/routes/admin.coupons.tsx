@@ -5,6 +5,7 @@ import { Pencil, Plus, Tag, Trash2, X } from "lucide-react";
 
 import { listAdminCoupons, removeCoupon, saveCoupon } from "@/lib/api/admin.functions";
 import {
+  Portal,
   Button,
   EmptyState,
   ErrorNote,
@@ -184,7 +185,7 @@ function Coupons() {
         </TableWrap>
       )}
 
-      <AnimatePresence>
+      <Portal><AnimatePresence>
         {draft && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -200,7 +201,7 @@ function Coupons() {
               exit={{ scale: 0.97, y: 10 }}
               transition={{ type: "spring", stiffness: 240, damping: 26 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
             >
               <div className="flex items-start justify-between">
                 <h2 className="text-lg font-bold tracking-tight text-foreground">
@@ -294,7 +295,7 @@ function Coupons() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence></Portal>
     </>
   );
 }

@@ -1,4 +1,5 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { Loader2, X as XIcon } from "lucide-react";
 
@@ -319,6 +320,23 @@ export function prettyDate(iso: string): string {
 // panel shows the summary you need at a glance and the rest on demand.
 // --------------------------------------------------------------------------
 
+/**
+ * Renders children into <body>.
+ *
+ * `position: fixed` is resolved against the nearest ancestor that has a
+ * transform, filter or backdrop-filter — not the viewport. The admin page
+ * wrapper animates (transform) and every card uses backdrop-filter, so any
+ * overlay rendered inline lands relative to that ancestor and can end up
+ * hundreds of pixels down the page, half off-screen. Portalling to body is
+ * the only reliable fix.
+ */
+export function Portal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted || typeof document === "undefined") return null;
+  return createPortal(children, document.body);
+}
+
 export function ListRow({
   onClick,
   index = 0,
@@ -391,6 +409,7 @@ export function DetailPanel({
   children: ReactNode;
 }) {
   return (
+    <Portal>
     <AnimatePresence>
       {open && (
         <>
@@ -438,6 +457,7 @@ export function DetailPanel({
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }
 

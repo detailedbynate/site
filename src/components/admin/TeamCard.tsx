@@ -11,6 +11,7 @@ import {
   setUserRole,
 } from "@/lib/api/auth.functions";
 import {
+  Portal,
   Avatar,
   Button,
   ErrorNote,
@@ -309,6 +310,7 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
+    <Portal>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -322,7 +324,7 @@ function Modal({
         exit={{ scale: 0.98, y: 8 }}
         transition={{ type: "spring", stiffness: 280, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+        className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
       >
         <div className="mb-5 flex items-start justify-between">
           <h2 className="text-lg font-bold tracking-tight text-foreground">{title}</h2>
@@ -333,5 +335,6 @@ function Modal({
         {children}
       </motion.div>
     </motion.div>
+    </Portal>
   );
 }

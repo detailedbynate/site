@@ -75,7 +75,7 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
     items: [
       { to: "/admin/settings", label: "Settings", icon: Settings },
       { to: "/admin/automation", label: "Automation", icon: Workflow, soon: true },
-      { to: "/admin/integrations", label: "Integrations", icon: Plug, soon: true },
+      { to: "/admin/integrations", label: "Integrations", icon: Plug },
       { to: "/admin/form-fields", label: "Form Fields", icon: FileInput, soon: true },
     ],
   },

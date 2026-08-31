@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/admin.functions";
 import { PhotoUploader } from "@/components/admin/PhotoUploader";
 import {
+  Portal,
   Avatar,
   Button,
   DetailField,
@@ -455,7 +456,7 @@ function RescheduleDialog({
   };
 
   return (
-    <AnimatePresence>
+    <Portal><AnimatePresence>
       {booking && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -470,7 +471,7 @@ function RescheduleDialog({
             exit={{ scale: 0.98, y: 8 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+            className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
           >
             <h2 className="text-lg font-bold tracking-tight text-foreground">Reschedule</h2>
             <p className="mt-1 text-[13px] text-muted-foreground">
@@ -539,6 +540,6 @@ function RescheduleDialog({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence></Portal>
   );
 }

@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check, FileUp, Upload, X } from "lucide-react";
 
 import { importCustomers } from "@/lib/api/admin.functions";
-import { Button, ErrorNote, Field, SuccessNote, inputCls } from "./ui";
+import {
+  Portal, Button, ErrorNote, Field, SuccessNote, inputCls } from "./ui";
 
 /**
  * Minimal RFC-4180 CSV parser — handles quoted fields, escaped quotes and
@@ -150,7 +151,7 @@ export function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
         <FileUp className="h-3.5 w-3.5" /> Import CSV
       </Button>
 
-      <AnimatePresence>
+      <Portal><AnimatePresence>
         {open && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -286,7 +287,7 @@ export function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence></Portal>
     </>
   );
 }

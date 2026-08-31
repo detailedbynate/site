@@ -152,6 +152,13 @@ export interface Settings {
    */
   mobileScheduleEnabled: boolean;
   mobileSchedule: WeekSchedule;
+  /** Google Calendar — configured from /admin/integrations, not env. */
+  googleClientId: string;
+  googleClientSecret: string;
+  googleRefreshToken: string;
+  googleCalendarId: string;
+  /** Which Google account is connected, for display only. */
+  googleAccountEmail: string;
   /** Resend API key — HTTP only, so no SMTP dependency. */
   resendApiKey: string;
   emailFrom: string;
@@ -255,6 +262,11 @@ export const DEFAULT_SETTINGS: Settings = {
     Number(process.env.BUSINESS_CLOSE_HOUR ?? 17),
     [0],
   ),
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN ?? "",
+  googleCalendarId: process.env.GOOGLE_CALENDAR_ID ?? "primary",
+  googleAccountEmail: "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
   emailReplyTo: "",

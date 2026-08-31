@@ -948,3 +948,139 @@ export const getSales = createServerFn({ method: "GET" })
         })),
     };
   });
+
+// ============================ Integrations ==============================
+
+/** The redirect URI Google must have registered. Derived from the request. */
+async function currentRedirectUri(): Promise<string> {
+  const { getRequestUrl } = await import("@tanstack/react-start/server");
+  const url = getRequestUrl({ xForwardedHost: true, xForwardedProto: true });
+  return `${url.origin}/admin/integrations`;
+}
+
+export const getIntegrations = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const { isGoogleCalendarConfigured, listCalendars } = await import("../google-calendar.server");
+  const { isEmailConfigured } = await import("../email.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  const settings = await getSettings();
+  const connected = await isGoogleCalendarConfigured();
+
+  // Only fetch the calendar list when actually connected, so a broken token
+  // doesn't make the whole page fail to load.
+  let calendars: Awaited<ReturnType<typeof listCalendars>> = [];
+  let listError: string | null = null;
+  if (connected) {
+    try {
+      calendars = await listCalendars();
+    } catch (err) {
+      listError = err instanceof Error ? err.message : "Couldn't list calendars.";
+    }
+  }
+
+  return {
+    google: {
+      connected,
+      // Never send the secret or refresh token to the browser.
+      hasClientId: Boolean(settings.googleClientId),
+      hasClientSecret: Boolean(settings.googleClientSecret),
+      clientId: settings.googleClientId,
+      accountEmail: settings.googleAccountEmail,
+      calendarId: settings.googleCalendarId,
+      calendars,
+      listError,
+      redirectUri: await currentRedirectUri(),
+    },
+    email: {
+      configured: isEmailConfigured(settings),
+      from: settings.emailFrom,
+    },
+  };
+});
+
+export const saveGoogleCredentials = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      clientId: z.string().max(300),
+      clientSecret: z.string().max(300),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings, getSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    // A blank secret means "keep the stored one" — the UI never echoes it back.
+    const current = await getSettings();
+    await updateSettings({
+      googleClientId: data.clientId.trim(),
+      googleClientSecret: data.clientSecret.trim() || current.googleClientSecret,
+    });
+    return { ok: true };
+  });
+
+/** Step 1 of connecting: the Google consent screen URL. */
+export const getGoogleConsentUrl = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const { buildConsentUrl } = await import("../google-calendar.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  const s = await getSettings();
+  if (!s.googleClientId || !s.googleClientSecret) {
+    throw new Error("Add your Client ID and Client secret first, then save.");
+  }
+  return {
+    url: buildConsentUrl(s.googleClientId, s.googleClientSecret, await currentRedirectUri()),
+  };
+});
+
+/** Step 2: exchange the ?code= Google sent back for a refresh token. */
+export const completeGoogleConnect = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ code: z.string().min(1).max(500) }))
+  .handler(async ({ data }) => {
+    const { getSettings, updateSettings } = await import("../db.server");
+    const { exchangeCodeForToken } = await import("../google-calendar.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const s = await getSettings();
+    const { refreshToken, email } = await exchangeCodeForToken(
+      s.googleClientId,
+      s.googleClientSecret,
+      await currentRedirectUri(),
+      data.code,
+    );
+
+    await updateSettings({ googleRefreshToken: refreshToken, googleAccountEmail: email });
+    return { email };
+  });
+
+export const setGoogleCalendar = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ calendarId: z.string().min(1).max(200) }))
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    await updateSettings({ googleCalendarId: data.calendarId });
+    return { ok: true };
+  });
+
+export const testGoogleConnection = createServerFn({ method: "POST" }).handler(async () => {
+  const { testConnection } = await import("../google-calendar.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+  return await testConnection();
+});
+
+export const disconnectGoogle = createServerFn({ method: "POST" }).handler(async () => {
+  const { updateSettings } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  // Drop the token but keep the client id/secret, so reconnecting is one click.
+  await updateSettings({ googleRefreshToken: "", googleAccountEmail: "" });
+  return { ok: true };
+});
