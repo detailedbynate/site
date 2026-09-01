@@ -15,6 +15,7 @@ Everything in this repo is the **real, intended codebase**. There is no other ve
 - shadcn/ui components already scaffolded in `src/components/ui/` (Radix primitives + `cva`). Use what's there before adding new UI packages.
 - `motion` (Framer Motion's new package name) for animations — already used throughout `index.tsx`/`book.tsx`.
 - Server functions via `createServerFn` from `@tanstack/react-start` — this is the backend pattern for this app. See "Backend architecture" below.
+- **SQLite through `node:sqlite`** (Node's built-in engine, no dependency) at `data/app.db`. Requires Node >= 22.13; `engines` and `.nvmrc` pin this.
 
 Run it:
 ```sh
@@ -49,7 +50,15 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
 
 1. **No separate backend service.** TanStack Start server functions (`createServerFn`) run in the same Node process as SSR. `.server.ts`-suffixed files are tree-shaken from the client bundle automatically (confirmed via the existing `config.server.ts` comment in the scaffold) — that's where all secrets and Google API calls live.
 
-2. **JSON-file database, not a real DB.** `src/lib/db.server.ts` persists to `data/store.json` (gitignored) using plain `node:fs/promises`, with an in-process write-queue mutex to avoid concurrent-write corruption. Chosen specifically to avoid native deps (`better-sqlite3` needs node-gyp, Postgres needs a hosted instance) so the project runs with zero extra infra. **Known limitation, called out in docs/booking-system.md:** this will NOT persist on serverless hosts with ephemeral/read-only filesystems (Vercel, Cloudflare Pages). Fine for a VPS / Render / Railway / Fly.io. Swapping to a real DB later should be a small change — every function in `db.server.ts` is an isolated async CRUD call.
+2. **SQLite via `node:sqlite`, no dependencies.** `src/lib/db.server.ts` is a real database at `data/app.db`, using the SQLite engine built into Node (22.13+). No native modules to compile, no database server, no new package — the same reasoning that made auth use `scrypt` from `node:crypto` rather than bcrypt.
+
+   It replaced a JSON file (`data/store.json`) that re-read and re-parsed the *whole* file on every call — computing availability across the 3-week window meant ~21 full-file reads, which are now index seeks on `bookings(date, status)`. It also brings real transactions and `UNIQUE` constraints on user email and booking reference, enforced by the database instead of by remembering to check first.
+
+   Writes go through `tx()`. `node:sqlite` is synchronous and Node is single-threaded, so nothing interleaves inside a transaction — which is why the old write-queue mutex is gone. **Do not `await` inside `tx()`**, that breaks the guarantee.
+
+   **Migration is automatic and safe.** On first start an existing `store.json` is imported in one transaction, then renamed to `store.json.migrated` with a copy at `store.json.backup`. The import only runs into a database holding no users, clients or bookings, so a stale export can never clobber live data. An unreadable database throws rather than silently starting empty (that bug destroyed test data once already).
+
+   **Still needs a persistent disk** — fine on a VPS / Render / Railway / Fly.io (mount a volume at `data/`), still impossible on Vercel/Cloudflare. The Nitro preset is pinned to `node-server` in `vite.config.ts` for exactly this reason; the scaffold defaulted to `cloudflare-module`, which would have failed at runtime rather than at build time.
 
 3. **Google Calendar: single-account OAuth2 refresh-token flow, not per-customer OAuth.** Customers never see a Google login — the business owner authorizes once (via `scripts/get-google-refresh-token.mjs`, a standalone local script), and the resulting refresh token lives in `.env` as `GOOGLE_REFRESH_TOKEN`. Availability is computed by calling `freebusy.query` against the configured calendar; confirmed bookings call `events.insert`. All in `src/lib/google-calendar.server.ts`.
 
@@ -61,9 +70,9 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
    - `requireUser()` / `requireRole()` in `auth.server.ts` are the single choke point; **every** admin server function starts with one. The client-side redirect in `admin.tsx` is convenience only, not the security boundary.
    - Login is throttled per IP+email (8 tries / 15 min, in-process) and returns an identical message for a wrong password and an unknown email, so accounts can't be enumerated.
    - **First-run:** with zero users, `/login` shows a setup screen that creates the owner account. `setupOwner` refuses once any user exists.
-   - **Forgot the password?** Stop the server, delete the `users` array from `data/store.json`, restart — the setup screen comes back.
+   - **Forgot the password?** Stop the server, run `DELETE FROM users;` against `data/app.db` (e.g. `node -e "new (require('node:sqlite').DatabaseSync)('data/app.db').exec('DELETE FROM users')"`), restart — the setup screen comes back.
 
-6. **Business rules live in the database, not env vars.** Hours, closed days, lead time, booking window, travel fee and the business contact details are rows in `data/store.json`, edited at `/admin/settings`, read via `getSettings()`. The `BUSINESS_*` / `BOOKING_*` env vars only seed `DEFAULT_SETTINGS` on first run. Same for the **service catalog** — packages and add-ons are DB records edited at `/admin/services` and `/admin/addons`; `src/lib/services.ts` now only holds the seed defaults, the shared types, and `quote()`. The booking wizard fetches the catalog via `getCatalog()` rather than importing it, so a price change takes effect with no redeploy.
+6. **Business rules live in the database, not env vars.** Hours, closed days, lead time, booking window, travel fee and the business contact details are rows in the `settings` table, edited at `/admin/settings`, read via `getSettings()`. The `BUSINESS_*` / `BOOKING_*` env vars only seed `DEFAULT_SETTINGS` on first run. Same for the **service catalog** — packages and add-ons are DB records edited at `/admin/services` and `/admin/addons`; `src/lib/services.ts` now only holds the seed defaults, the shared types, and `quote()`. The booking wizard fetches the catalog via `getCatalog()` rather than importing it, so a price change takes effect with no redeploy.
 
 7. **Timezone handling has no external dependency.** `src/lib/availability.server.ts` converts business-hours wall-clock times to UTC ISO strings using `Intl.DateTimeFormat` offset lookups rather than pulling in `date-fns-tz` or similar (the project already has plain `date-fns`, not the tz variant). Read the comment above `zonedTimeToISO` before touching this — it's correct but non-obvious (computes the zone's offset for the specific date by round-tripping through `Intl`, which handles DST correctly).
 
@@ -75,15 +84,125 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
 
 10. **Availability is computed for a whole 3-week window, not one day.** `getAvailableDays()` in `availability.server.ts` powers the calendar's greyed-out days, each with a reason (`closed` / `booked` / `lead-time`). Days ruled out by a static rule short-circuit before hitting Google Calendar, so it costs one freebusy call per *candidate* day, not per day shown. Lead time, closed weekdays, and window length are env-configurable (`BOOKING_LEAD_DAYS`, `CLOSED_DAYS`, `BOOKING_WINDOW_DAYS`) — defaults are 1 day's notice and closed Sundays, matching the Mon–Sat hours on the site.
 
-11. **CSS gotcha — use `overflow: clip`, not `hidden`, on anything with a translated `::after`.** The `sheen` and `btn-liquid` utilities have a decorative `::after` at `translateX(-120%)`. A transform contributes to an element's *scrollable overflow region*, and `overflow: hidden` still creates a scroll container — so focusing a child (tabbing to a time slot) made the browser scroll the whole wizard panel ~250px sideways and shove its content out of view. `overflow: clip` clips identically but never becomes scrollable. There are comments on both utilities in `styles.css`; don't "tidy" them back to `hidden`.
+11. **Finance is a real P&L, and every figure traces to a record.** `getFinance()` in
+    `finance.functions.ts` computes:
+
+    ```
+    revenue      completed jobs only (price − discount + tip)
+    − cogs       expenses typed "cogs" — supplies consumed doing the work
+    = gross profit
+    − operating  expenses typed "operating" — fuel, insurance, ads, wages
+    = net profit
+      equipment  durable purchases, reported but deliberately OUTSIDE net, so one
+                 machine doesn't make a good month look like a disaster
+    ```
+
+    Three rules worth keeping:
+    - **Everything is scoped to the selected window.** Totals, categories, vendors and
+      per-package figures all cover the same N months as the chart, so the headline always
+      reconciles with the bars. Records dated outside the window are reported separately
+      (`outside`) rather than silently dropped. An earlier version had all-time totals over a
+      windowed chart, which could never add up.
+    - **Nothing is estimated except one clearly-labelled thing**: per-package margin uses the
+      optional `materialCost` on each service. It never touches the headline P&L.
+    - **Agent pay is an estimate too and is NOT in the P&L.** Record real wages as an
+      expense; reported profit should only ever reflect money that actually moved.
+
+12. **Assets and expenses are one action, not two.** `restockAsset()` raises stock *and* writes
+    the expense in a single transaction, so the shelf and the ledger cannot drift. Consumables
+    book as `cogs`, equipment as `equipment`. Note the ordering trap: the stock update happens
+    inside `addExpense`, so re-read the asset before writing anything else back to it — writing
+    a pre-restock snapshot silently undoes the stock you just added.
+
+13. **Coupon redemption is server-authoritative.** `evaluateCoupon()` in
+    `booking.functions.ts` is the single implementation, used by BOTH the live preview the
+    customer sees (`checkCoupon`) and the real booking — so the quoted discount and the charged
+    discount can never disagree. The subtotal it prices against is always recomputed on the
+    server; a client-supplied total could be forged to inflate a percentage. `redeemCoupon()`
+    re-checks the usage cap *inside its transaction*, so two bookings racing for the last use of
+    a limited code can't both win. A code that expires between preview and submit is simply not
+    applied — the booking still completes at full price rather than failing, and the response
+    reports which code (if any) was actually honoured.
+
+14. **Admin light/dark.** `useAdminTheme()` applies `admin-light` to the shell via a **callback
+    ref held in state**, not `useRef`. Two reasons, both learned the hard way: the class can't
+    live in React's `className` because the server can't know the preference (it would either
+    flash the wrong theme or trip a hydration mismatch), and a plain ref is still `null` while
+    the layout shows its "checking session" screen — the effect then never re-ran once the real
+    element mounted, leaving light mode stuck on dark.
+
+    All the admin's surfaces route through a token ladder (`--line-1..3`, `--fill-1..3`) defined
+    in `styles.css`. The 202 hardcoded `white/[0.0x]` utilities were migrated to it, because
+    white-on-dark hairlines are invisible on a light ground. **Use the tokens for any new admin
+    surface** — a raw `bg-white/[0.05]` will look fine in dark mode and disappear in light.
+
+15. **Page and tab transitions.** Route changes used to use `AnimatePresence mode="wait"`, which
+    unmounts the old page, waits out its exit, and only then mounts the new one — leaving the
+    container empty and collapsed to zero height in between, which is what made switching
+    sections visibly jump. Now: no exit, no waiting, a `min-h` floor on `<main>`, and `Spinner`
+    reserves 58vh so the layout doesn't snap again when data lands. Tab groups use
+    `TabBar`, whose active pill is one element shared across tabs via `layoutId`, so Motion
+    tweens it between options instead of hard-cutting a background.
+
+16. **Stripe and webhooks are real, and deliberately narrow.** `stripe.server.ts` talks to
+    Stripe's REST API with plain `fetch` (no SDK, same reasoning as Resend over nodemailer). It
+    verifies a key by asking Stripe whose account it is — a real check, not a format test — and
+    creates a hosted Payment Link for a booking's balance. It does NOT hold card details, run an
+    on-page checkout, or consume inbound Stripe webhooks; marking a job paid is still manual.
+    Outgoing webhooks POST booking events to any URL, HMAC-SHA256 signed in `x-dbn-signature`,
+    https-only, fire-and-forget with an 8s timeout — an unreachable endpoint must never take a
+    booking down with it.
+
+18. **Number inputs select on focus.** Every numeric field is controlled and shows `0` when
+    empty; clicking to the LEFT of that zero and typing `5` produced `50`. One delegated
+    `focusin` listener in `admin.tsx` selects the contents of any `input[type=number]`, so the
+    first keystroke replaces it. Done by delegation rather than on ~30 inputs so it also covers
+    anything added later. Note `selectionStart` is always `null` on number inputs — the fix is
+    verified by whether typing replaces, not by reading the selection.
+
+19. **The public site no longer ships stock photography as its own work.** The bundled
+    before/after JPEGs are gone from both the homepage and Results; only pairs uploaded under
+    Admin → SEO & branding appear, and each carries its own subtitle, description and package
+    label. The homepage section hides entirely when there are none. Testimonials moved the same
+    way — the six hardcoded reviews are now seeded DB rows, editable at /admin/testimonials, so
+    the design is unchanged but the words are the owner’s.
+
+20. **CSV import of past jobs.** Parsed in the browser (the file never leaves the machine — only
+    parsed rows are sent), column names matched through an alias table so a foreign export still
+    works, previewed with a dry run before anything is written, and de-duplicated on
+    date+time+customer so re-running the same file is safe. Imported jobs are marked paid, since
+    otherwise Payments would show years of phantom debt.
+
+22. **Light mode is marked on `<html>`, not just the admin root.** Seven elements re-declare
+    `admin-theme` on themselves — the mobile drawer, the slide-over detail panel and every
+    modal — and a re-declared block resets the palette to its dark defaults. The modals are
+    also portalled to `<body>`, so they sit outside the admin root entirely. Toggling the class
+    on the root element alone therefore left the drawer and every overlay stuck dark. The fix
+    is the `:root.admin-light .admin-theme` selectors in styles.css paired with a class on
+    `documentElement`, removed on unmount so the marketing site is never tinted. **Any new
+    element that sets its own `admin-theme` class is covered automatically.**
+
+23. **CSS gotcha — `items-end` on a bar-chart row collapses every bar.** A flex row with
+    `items-end` sizes its children to their content, so a bar's `height: N%` resolves against
+    a few pixels instead of the container. Three charts shipped looking flat because of it.
+    Use `items-stretch` on the row and `items-end` only on the inner bar area.
+
+24. **Homepage copy lives in the database.** Reviews, the FAQ and the hero background are all
+    editable (Reviews & FAQ, and SEO & branding). The arrays still in `index.tsx` are named
+    `fallback*` and are only used when a table comes back empty. Do not edit them expecting the
+    site to change.
+
+25. **CSS gotcha — use `overflow: clip`, not `hidden`, on anything with a translated `::after`.** The `sheen` and `btn-liquid` utilities have a decorative `::after` at `translateX(-120%)`. A transform contributes to an element's *scrollable overflow region*, and `overflow: hidden` still creates a scroll container — so focusing a child (tabbing to a time slot) made the browser scroll the whole wizard panel ~250px sideways and shove its content out of view. `overflow: clip` clips identically but never becomes scrollable. There are comments on both utilities in `styles.css`; don't "tidy" them back to `hidden`.
 
 ## File map — everything added/changed this session
 
 ```
 src/lib/services.ts                    Seed catalog + shared types + quote() maths
 src/lib/config.server.ts               Google creds only (business rules moved to the DB)
-src/lib/db.server.ts                   JSON store: clients, bookings, users, sessions,
-                                       services, addOns, coupons, settings + write lock
+src/lib/db.server.ts                   SQLite (node:sqlite): clients, bookings, users,
+                                       sessions, services, addOns, coupons, photos,
+                                       emailRules/Log, formFields, gallery, settings
+                                       + schema, transactions, store.json import
 src/lib/auth.server.ts                 scrypt hashing, sessions, requireUser/requireRole, throttle
 src/lib/google-calendar.server.ts      OAuth2 client, freebusy query, event create/delete
 src/lib/availability.server.ts         Slot computation + getAvailableDays() for the calendar
@@ -105,8 +224,24 @@ src/routes/admin.services.tsx          Package catalog editor
 src/routes/admin.addons.tsx            Add-on catalog editor
 src/routes/admin.coupons.tsx           Discount codes (creation works; redemption not wired yet)
 src/routes/admin.settings.tsx          Business info, hours, booking rules, profile, password
-src/routes/admin.{orders,payments,agents,locations,assets,automation,integrations,form-fields}.tsx
-                                       Planned sections — nav present, clearly marked unbuilt
+src/routes/admin.finance.tsx           P&L: revenue − COGS = gross − operating = net, expense
+                                       ledger, spend by category, per-package margin
+src/routes/admin.payments.tsx          Balances owed, record a payment/tip, mark refunded
+src/routes/admin.assets.tsx            Equipment + consumables, stock levels, restock-with-expense
+src/routes/admin.agents.tsx            Staff roster, pay setup, per-person jobs/hours/revenue
+src/routes/admin.locations.tsx         Shops and mobile zones with per-zone travel fees
+src/lib/api/finance.functions.ts       Expense CRUD + getFinance() period P&L
+src/lib/api/operations.functions.ts    Agents, locations, assets CRUD + job assignment
+src/components/admin/EditorModal.tsx   Shared create/edit dialog (portalled to <body>)
+src/components/admin/AvatarPicker.tsx   Profile pictures (downscaled client-side)
+src/components/admin/AppointmentImport.tsx CSV import of past jobs
+src/lib/api/content.functions.ts       Testimonials + profile pictures
+src/lib/api/appointments.functions.ts  Price breakdown, editing, CSV import
+src/routes/admin.testimonials.tsx      Homepage reviews: add / edit / reorder / hide
+src/components/admin/theme.tsx         Light/dark for the admin shell (see #14)
+src/components/admin/TabBar.tsx        Segmented control with a sliding pill (see #15)
+src/lib/stripe.server.ts               Stripe REST via fetch: verify key, create payment link
+src/lib/webhooks.server.ts             Outgoing signed webhooks on booking events
 src/routes/__root.tsx                  Mounts BookingModalProvider around <Outlet/>
 src/routes/index.tsx                   Book Now buttons open the modal instead of navigating
 src/routes/book.tsx                    Renders BookingWizard inline
@@ -119,7 +254,7 @@ Untouched from the Lovable export: `src/routes/index.tsx` (homepage), `src/route
 
 ## Conventions already established in this codebase (follow these)
 
-- Server-only code goes in a `*.server.ts` file, or is imported dynamically **inside** a `createServerFn` handler (`await import("../db.server")`) — never at module scope in a file that's also imported client-side. This is what keeps secrets and `googleapis` out of the browser bundle. See `src/lib/api/example.functions.ts` (pre-existing scaffold file) for the canonical pattern; every new `.functions.ts` file follows it.
+- Server-only code goes in a `*.server.ts` file, or is imported dynamically **inside** a `createServerFn` handler (`await import("../db.server")`) — never at module scope in a file that's also imported client-side. This is what keeps secrets and `googleapis` out of the browser bundle. See `src/lib/api/booking.functions.ts` for the canonical pattern; every `.functions.ts` file follows it. (The scaffold’s `example.functions.ts` was deleted — it was unused and exposed `nodeEnv` on an unauthenticated endpoint.)
 - `getServerConfig()` in `src/lib/config.server.ts` is the single place env vars are read — always read inside a function, never at module scope (comment in that file explains why: Cloudflare Workers bind env at request time).
 - Path alias `@/*` → `src/*` (see `tsconfig.json`).
 - File-based routing: **do not** hand-edit `src/routeTree.gen.ts`. Adding a route = adding a file under `src/routes/`; see `src/routes/README.md`.
@@ -131,8 +266,14 @@ Untouched from the Lovable export: `src/routes/index.tsx` (homepage), `src/route
 2. **Google Calendar.** Run `node scripts/get-google-refresh-token.mjs`, fill `GOOGLE_*` in `.env`, and retest — this is the last unverified path. Confirm a booking creates a real event, that a busy block removes slots, and that cancelling deletes the event.
 3. **Real contact details.** `/admin/settings` holds the business name/phone/email now, but the hardcoded Lovable placeholders `(555) 123-4567` and `book@detailedbynate.com` still appear in the `index.tsx` and `book.tsx` footers — wire those to `getCatalog().business` or edit them.
 4. **Confirmation email/SMS.** Nothing is sent. The confirmation screen says one is coming, and only the Google Calendar invite actually goes out (when configured). Wire an email provider or soften the copy.
-5. **Coupon redemption.** Codes can be created at `/admin/coupons` and `applyDiscount()` exists in `services.ts`, but the booking form has no field to enter one and `createBooking` ignores them.
-6. **Before a real domain:** rate-limiting at the proxy (the in-process login throttle resets on restart), a deposit/no-show policy, and swapping the JSON store for a real DB if you deploy anywhere with an ephemeral filesystem (Vercel/Cloudflare won't persist it — use a VPS/Render/Railway/Fly).
+5. **Coupon redemption is done** — there's a code field on the booking wizard's Review step, and
+   redemptions are counted. What's still missing is per-customer limits ("one use per email").
+
+5b. **Locations are admin-side only.** Zones carry their own travel fee for planning and
+    reporting, but the public booking form still offers the plain mobile/shop choice and the
+    single default travel fee from Settings. Wiring zones into the customer-facing wizard is a
+    separate change.
+6. **Before a real domain:** rate-limiting at the proxy (the in-process login throttle resets on restart) and a deposit/no-show policy. Deploy only where `data/` is a persistent volume — Vercel/Cloudflare will lose the database *and* every uploaded photo on each deploy; use a VPS/Render/Railway/Fly. Build with `npm run build`, start with `npm start`.
 
 ## Design system reference (for future visual work)
 

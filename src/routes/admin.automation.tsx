@@ -383,7 +383,7 @@ function Automation() {
                           [rule.id]: { ...draft, body: `${draft.body}{{${v}}}` },
                         })
                       }
-                      className="rounded-md bg-white/[0.05] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.1] hover:text-foreground"
+                      className="rounded-md bg-[var(--fill-2)] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-[var(--line-2)] transition hover:bg-[var(--fill-3)] hover:text-foreground"
                     >
                       {`{{${v}}}`}
                     </button>
@@ -419,7 +419,7 @@ function Automation() {
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.98, y: 8 }}
                 onClick={(e) => e.stopPropagation()}
-                className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+                className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
@@ -502,7 +502,7 @@ function Automation() {
                         key={v}
                         type="button"
                         onClick={() => setNewRule({ ...newRule, body: `${newRule.body}{{${v}}}` })}
-                        className="rounded-md bg-white/[0.05] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.1] hover:text-foreground"
+                        className="rounded-md bg-[var(--fill-2)] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-[var(--line-2)] transition hover:bg-[var(--fill-3)] hover:text-foreground"
                       >
                         {`{{${v}}}`}
                       </button>
@@ -549,7 +549,7 @@ function Automation() {
             {data.log.map((e) => (
               <div
                 key={e.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/[0.03] px-3 py-2 text-[12px]"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-[var(--fill-1)] px-3 py-2 text-[12px]"
               >
                 <span
                   className={`rounded px-1.5 py-0.5 text-[10.5px] font-semibold ${
@@ -557,7 +557,7 @@ function Automation() {
                       ? "bg-emerald-400/12 text-emerald-300"
                       : e.status === "failed"
                         ? "bg-destructive/12 text-destructive"
-                        : "bg-white/[0.06] text-muted-foreground"
+                        : "bg-[var(--fill-2)] text-muted-foreground"
                   }`}
                 >
                   {e.status}

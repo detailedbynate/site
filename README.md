@@ -71,25 +71,34 @@ npm run dev
 ```
 
 - `/book` — the live booking form (package → date → open time slot → contact info). Confirmed bookings create a Google Calendar event automatically and save the client + booking locally.
-- `/admin` — enter `ADMIN_PASSWORD` to see all bookings (mark complete/cancelled — cancelling also removes the Calendar event) and all clients (plus a form to add a client manually, e.g. for a phone-booked job).
+- `/admin` — sign in at `/login` to manage bookings (mark complete/cancelled — cancelling also removes the Calendar event), customers, the service catalog, settings and automation. On a fresh database `/login` shows a one-time setup screen that creates the owner account.
 
 ### Where things are stored
 
-Bookings and clients are saved to `data/store.json` (a gitignored JSON
-file) via `src/lib/db.server.ts`. That's enough for a single always-on
-Node server (a small VPS, Render, Railway, Fly.io). It will **not**
-persist on serverless hosts with an ephemeral/read-only filesystem
-(Vercel, Cloudflare Pages) — if you deploy there, swap `db.server.ts` for
-a real database (Postgres via Neon/Supabase, Turso, etc.); every function
-in that file is a small async CRUD call, so nothing else needs to change.
+Everything is in a SQLite database at `data/app.db`, via
+`src/lib/db.server.ts`. It uses **`node:sqlite`** — the engine built into
+Node itself — so there are no native modules to compile and no database
+server to run. Uploaded photos are real files under `data/uploads/`.
+
+This needs a **persistent, writable disk**. It works on a VPS, Railway,
+Render or Fly.io (mount a volume at `data/`). It will **not** work on
+serverless hosts with an ephemeral or read-only filesystem (Vercel,
+Cloudflare Pages) — the database and every photo would vanish on each
+deploy. The production build targets `node-server` for this reason (see
+`vite.config.ts`); build with `npm run build` and start with `npm start`.
+
+Upgrading from an older checkout that used `data/store.json`? Nothing to
+do: the JSON file is imported automatically the first time the server
+starts, and the original is kept as `data/store.json.backup`.
 
 ### Hardening before going live
 
 This is a working demo/first pass, not a production-secure backend yet:
 
-- **Admin auth** currently checks a shared password sent with every
-  request — fine for one person testing locally, not for the public
-  internet. Swap in real session-based auth before pointing a real domain
-  at `/admin`.
+- **Admin auth is real**: scrypt-hashed passwords and server-side,
+  revocable sessions in an HTTP-only cookie. What's still missing is
+  rate limiting at the proxy — the login throttle is in-process, so it
+  resets whenever the server restarts.
 - Add rate limiting to `/book`'s `createBooking` call so it can't be spammed.
 - Consider requiring email verification or a deposit before confirming a booking.
+- Back up `data/` — it holds the database *and* the uploaded photos.

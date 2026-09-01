@@ -156,7 +156,7 @@ function FormFields() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: i * 0.04 } }}
                 exit={{ opacity: 0 }}
-                className={`flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 ${
+                className={`flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-4 py-3 ${
                   f.active ? "" : "opacity-55"
                 }`}
               >
@@ -212,7 +212,7 @@ function FormFields() {
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.98, y: 8 }}
                 onClick={(e) => e.stopPropagation()}
-                className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+                className="max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
               >
                 <div className="flex items-start justify-between">
                   <h2 className="text-lg font-bold tracking-tight text-foreground">
@@ -244,7 +244,7 @@ function FormFields() {
                           className={`rounded-lg px-2.5 py-2 text-left ring-1 ring-inset transition ${
                             draft.type === t.value
                               ? "bg-primary/12 text-primary ring-primary/30"
-                              : "bg-white/[0.03] text-foreground ring-white/[0.08] hover:bg-white/[0.07]"
+                              : "bg-[var(--fill-1)] text-foreground ring-[var(--line-2)] hover:bg-[var(--fill-3)]"
                           }`}
                         >
                           <span className="block text-[12px] font-semibold">{t.label}</span>
@@ -312,7 +312,7 @@ function FormFields() {
                             className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold ring-1 ring-inset transition ${
                               on
                                 ? "bg-primary/12 text-primary ring-primary/30"
-                                : "bg-white/[0.03] text-muted-foreground ring-white/[0.08] hover:bg-white/[0.07]"
+                                : "bg-[var(--fill-1)] text-muted-foreground ring-[var(--line-2)] hover:bg-[var(--fill-3)]"
                             }`}
                           >
                             {s.title}

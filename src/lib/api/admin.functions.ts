@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { buildPeriodWindow, periodKey, type PeriodUnit } from "../periods";
+
 // Every function here begins with requireUser(), which reads the HTTP-only
 // session cookie and throws UNAUTHORIZED if it isn't a valid, unexpired
 // session. That is the single choke point for admin authorization — there
@@ -11,7 +13,16 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // --------------------------- Dashboard --------------------------------
 
-export const getDashboard = createServerFn({ method: "GET" }).handler(async () => {
+export const getDashboard = createServerFn({ method: "GET" })
+  .inputValidator(
+    z
+      .object({
+        unit: z.enum(["week", "month"]).default("month"),
+        count: z.number().int().min(2).max(26).default(6),
+      })
+      .default({ unit: "month", count: 6 }),
+  )
+  .handler(async ({ data }) => {
   const { listBookingsWithClients, listClients, getSettings } = await import("../db.server");
   const { requireUser } = await import("../auth.server");
   await requireUser();
@@ -45,24 +56,61 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(async () =
 
   const pipeline = upcoming.reduce((sum, b) => sum + (b.totalPrice ?? 0), 0);
 
+  // Last calendar month, computed here rather than read off the chart: the
+  // chart can be showing weeks, in which case there is no "last month"
+  // bucket to look at and the comparison would silently read zero.
+  const prevMonthKey = (() => {
+    const d = new Date(`${today}T12:00:00`);
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+
   // Revenue for the last 6 months, oldest first — drives the dashboard chart.
-  const months: { month: string; label: string; revenue: number; jobs: number }[] = [];
-  const cursor = new Date(`${today}T12:00:00`);
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const inMonth = active.filter((b) => b.date.startsWith(key) && b.status === "completed");
-    months.push({
-      month: key,
-      label: d.toLocaleString("en-US", { month: "short" }),
-      revenue: inMonth.reduce((s, b) => s + earned(b), 0),
-      jobs: inMonth.length,
-    });
-  }
+  // The window extends past the current month when completed work is dated
+  // there, so finishing a job booked for early next month moves the graph
+  // immediately instead of waiting for the month to roll over.
+  const completedBookings = active.filter((b) => b.status === "completed");
+  const unit: PeriodUnit = data.unit;
+  const months = buildPeriodWindow(
+    today,
+    unit,
+    data.count,
+    completedBookings.map((b) => b.date),
+  ).map((bucket) => {
+    const inPeriod = completedBookings.filter((b) => periodKey(b.date, unit) === bucket.key);
+    // Confirmed work in the same period, shown alongside as pipeline so the
+    // chart says what is booked as well as what has been earned.
+    const bookedIn = active.filter(
+      (b) => b.status === "confirmed" && periodKey(b.date, unit) === bucket.key,
+    );
+    return {
+      month: bucket.key,
+      label: bucket.label,
+      start: bucket.start,
+      end: bucket.end,
+      revenue: inPeriod.reduce((s, b) => s + earned(b), 0),
+      jobs: inPeriod.length,
+      booked: bookedIn.reduce((s, b) => s + earned(b), 0),
+      bookedJobs: bookedIn.length,
+    };
+  });
+
+  // Completed work dated in a future month is real money that "this month"
+  // legitimately excludes. Reported separately so it can be shown rather
+  // than silently vanishing between the tile and the chart.
+  const aheadRevenue = completedBookings
+    .filter((b) => b.date.slice(0, 7) > thisMonth)
+    .reduce((s, b) => s + earned(b), 0);
 
   // Which packages actually sell.
+  //
+  // COMPLETED jobs only, deliberately. This used to count every non-cancelled
+  // booking, so a job that was merely booked contributed revenue here while
+  // the chart beside it counted only finished work — the two cards disagreed
+  // and neither was obviously wrong. Same basis everywhere now.
   const byService = new Map<string, { title: string; count: number; revenue: number }>();
-  for (const b of active) {
+  for (const b of completedBookings) {
     const entry = byService.get(b.serviceId) ?? { title: b.serviceTitle, count: 0, revenue: 0 };
     entry.count += 1;
     entry.revenue += earned(b);
@@ -75,10 +123,19 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(async () =
       upcomingCount: upcoming.length,
       totalClients: clients.length,
       revenueThisMonth,
+      revenueLastMonth: active
+        .filter((b) => b.date.startsWith(prevMonthKey) && b.status === "completed")
+        .reduce((sum, b) => sum + earned(b), 0),
+      aheadRevenue,
+      // The current calendar month, so the client can locate it in `months`
+      // rather than assuming it is the last bucket — it is not, whenever the
+      // window has been extended to cover future-dated work.
+      thisMonthKey: thisMonth,
       pipeline,
       completedAllTime: active.filter((b) => b.status === "completed").length,
       cancelledAllTime: bookings.filter((b) => b.status === "cancelled").length,
-      tipsThisMonth: active
+      // Completed only, to match how revenue is counted everywhere else.
+      tipsThisMonth: completedBookings
         .filter((b) => b.date.startsWith(thisMonth))
         .reduce((sum, b) => sum + (b.tip ?? 0), 0),
     },
@@ -87,9 +144,10 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(async () =
       .sort((a, b) => a.startTime.localeCompare(b.startTime)),
     upcoming: upcoming.slice(0, 8),
     months,
+    unit,
     byService: [...byService.values()].sort((a, b) => b.revenue - a.revenue),
   };
-});
+  });
 
 // -------------------------- Appointments ------------------------------
 
@@ -148,6 +206,16 @@ export const setBookingStatus = createServerFn({ method: "POST" })
       const { runTriggerAndCustom } = await import("../email.server");
       // Fire-and-forget: a mail failure must not block freeing the slot.
       void runTriggerAndCustom("booking_cancelled", booking).catch(() => undefined);
+    }
+
+    // Notify any configured webhook of the state change, same fire-and-forget
+    // contract — an unreachable endpoint must never block the status update.
+    if (booking && (data.status === "cancelled" || data.status === "completed")) {
+      void import("../webhooks.server")
+        .then(({ sendWebhook }) =>
+          sendWebhook(data.status === "cancelled" ? "booking_cancelled" : "booking_completed", booking),
+        )
+        .catch(() => undefined);
     }
 
     if (data.status === "cancelled" && existing.googleEventId) {
@@ -331,6 +399,8 @@ export const saveService = createServerFn({ method: "POST" })
       description: z.string().max(600).default(""),
       active: z.boolean().default(true),
       sortOrder: z.number().int().min(0).max(999).default(0),
+      // Estimated product cost per job — feeds the margin estimate on Finance.
+      materialCost: z.number().min(0).max(100000).default(0),
     }),
   )
   .handler(async ({ data }) => {
@@ -1006,6 +1076,21 @@ export const getIntegrations = createServerFn({ method: "GET" }).handler(async (
       configured: isEmailConfigured(settings),
       from: settings.emailFrom,
     },
+    stripe: {
+      // Never send the secret key back to the browser — only whether one
+      // exists, and the last 4 characters so the shop can tell keys apart.
+      configured: Boolean(settings.stripeSecretKey),
+      keyHint: settings.stripeSecretKey ? `••••${settings.stripeSecretKey.slice(-4)}` : "",
+      publishableKey: settings.stripePublishableKey,
+      accountName: settings.stripeAccountName,
+      currency: settings.stripeCurrency || "cad",
+      livemode: settings.stripeSecretKey.startsWith("sk_live"),
+    },
+    webhook: {
+      url: settings.webhookUrl,
+      hasSecret: Boolean(settings.webhookSecret),
+      events: settings.webhookEvents ?? [],
+    },
   };
 });
 
@@ -1243,6 +1328,10 @@ export const saveGalleryPair = createServerFn({ method: "POST" })
       afterPhotoId: idSchema,
       sortOrder: z.number().int().min(0).max(999).default(0),
       active: z.boolean().default(true),
+      // Copy shown on the Results page beneath each slider.
+      detail: z.string().max(80).default(""),
+      description: z.string().max(600).default(""),
+      packageLabel: z.string().max(40).default(""),
     }),
   )
   .handler(async ({ data }) => {

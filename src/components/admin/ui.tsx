@@ -70,6 +70,13 @@ export function GlassCard({
   );
 }
 
+/**
+ * Headline number card.
+ *
+ * Padding and type step down below `sm`, where these sit two-up in roughly
+ * 170px of width. Everything from `sm:` upward is the original desktop
+ * sizing, untouched.
+ */
 export function StatTile({
   label,
   value,
@@ -92,13 +99,16 @@ export function StatTile({
       initial="hidden"
       animate="show"
       whileHover={{ y: -2 }}
-      className={`liquid-glass relative overflow-hidden rounded-2xl p-5 ${
+      className={`liquid-glass relative overflow-hidden rounded-2xl p-4 sm:p-5 ${
         accent ? "ring-1 ring-inset ring-primary/25" : ""
       }`}
     >
-      <div className="flex items-center gap-2.5">
-        <Icon className="h-4 w-4 shrink-0 text-primary" />
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <div className="flex items-start gap-2 sm:items-center">
+        <Icon className="mt-px h-3.5 w-3.5 shrink-0 text-primary sm:mt-0 sm:h-4 sm:w-4" />
+        {/* Wraps rather than truncating: at half a phone's width "Revenue this
+            month" became "REVENUE THIS M…", which reads worse than two lines.
+            `sm:` and up is single-line as before. */}
+        <p className="text-[10px] font-semibold uppercase leading-tight tracking-[0.1em] text-muted-foreground sm:truncate sm:text-[11px] sm:leading-normal sm:tracking-[0.12em]">
           {label}
         </p>
       </div>
@@ -106,11 +116,11 @@ export function StatTile({
         key={String(value)}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="tnum mt-3 text-[30px] font-bold leading-none tracking-tight text-foreground"
+        className="tnum mt-2.5 text-[22px] font-bold leading-none tracking-tight text-foreground sm:mt-3 sm:text-[30px]"
       >
         {value}
       </motion.p>
-      {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground sm:mt-2 sm:text-xs">{hint}</p>}
     </motion.div>
   );
 }
@@ -118,9 +128,9 @@ export function StatTile({
 const statusStyles: Record<string, string> = {
   confirmed: "bg-primary/12 text-primary ring-primary/25",
   completed: "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25",
-  cancelled: "bg-white/[0.05] text-muted-foreground ring-white/[0.08]",
+  cancelled: "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]",
   active: "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25",
-  inactive: "bg-white/[0.05] text-muted-foreground ring-white/[0.08]",
+  inactive: "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]",
 };
 
 export function StatusPill({ status }: { status: string }) {
@@ -139,8 +149,8 @@ type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
 
 const variants: Record<ButtonVariant, string> = {
   primary: "text-primary-foreground",
-  outline: "border border-white/[0.09] bg-white/[0.03] text-foreground hover:bg-white/[0.07]",
-  ghost: "text-muted-foreground hover:text-foreground hover:bg-white/[0.06]",
+  outline: "border border-[var(--line-2)] bg-[var(--fill-1)] text-foreground hover:bg-[var(--fill-3)]",
+  ghost: "text-muted-foreground hover:text-foreground hover:bg-[var(--fill-2)]",
   danger:
     "border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20",
 };
@@ -176,7 +186,7 @@ export const Button = forwardRef<
 });
 
 export const inputCls =
-  "w-full rounded-lg border border-white/[0.09] bg-white/[0.03] px-3.5 py-2.5 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-primary/60 focus:bg-white/[0.05] focus:ring-2 focus:ring-primary/20";
+  "w-full rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-3.5 py-2.5 text-[13px] text-foreground outline-none transition placeholder:text-muted-foreground/50 focus:border-primary/60 focus:bg-[var(--fill-2)] focus:ring-2 focus:ring-primary/20";
 
 export function Field({
   label,
@@ -234,11 +244,22 @@ export function EmptyState({
   );
 }
 
+/**
+ * Loading state. Reserves most of the viewport on purpose: every page fetches
+ * on mount, so a short spinner followed by a tall page made the layout snap
+ * downward the instant data arrived. Holding the height keeps the transition
+ * from the previous page continuous.
+ */
 export function Spinner({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 0.12 }}
+      className="flex min-h-[58vh] items-center justify-center gap-2 text-sm text-muted-foreground"
+    >
       <Loader2 className="h-4 w-4 animate-spin" /> {label}
-    </div>
+    </motion.div>
   );
 }
 
@@ -291,7 +312,10 @@ export function Td({ children, className = "" }: { children: ReactNode; classNam
 }
 
 export function money(n: number): string {
-  return `$${n.toLocaleString("en-US")}`;
+  // The sign goes before the currency symbol: a loss reads "-$135", never
+  // "$-135". Finance shows negatives routinely, so this matters.
+  const sign = n < 0 ? "-" : "";
+  return `${sign}$${Math.abs(n).toLocaleString("en-US")}`;
 }
 
 export function hours(minutes: number): string {
@@ -363,7 +387,7 @@ export function ListRow({
           onClick();
         }
       }}
-      className={`group grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 transition-colors hover:border-primary/30 hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+      className={`group grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-4 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-4 py-3.5 transition-colors hover:border-primary/30 hover:bg-[var(--fill-2)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
         muted ? "opacity-55" : ""
       }`}
     >
@@ -381,7 +405,7 @@ export function Avatar({ name, sub }: { name: string; sub?: string }) {
     .join("")
     .toUpperCase();
   return (
-    <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[12px] font-bold text-foreground ring-1 ring-inset ring-white/[0.08]">
+    <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--fill-2)] text-[12px] font-bold text-foreground ring-1 ring-inset ring-[var(--line-2)]">
       {initials || "?"}
       {sub && (
         <span className="absolute -bottom-0.5 -right-0.5 rounded-full bg-[var(--card)] px-1 text-[9px] font-bold text-primary ring-1 ring-white/10">
@@ -427,9 +451,9 @@ export function DetailPanel({
             transition={{ type: "spring", stiffness: 320, damping: 36 }}
             role="dialog"
             aria-modal="true"
-            className="admin-theme fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col border-l border-white/[0.08] bg-[var(--background)]"
+            className="admin-theme fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col border-l border-[var(--line-2)] bg-[var(--background)]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] px-6 py-5">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--line-1)] px-6 py-5">
               <div className="min-w-0">
                 {eyebrow && (
                   <p className="mb-1 text-[11px] font-medium text-muted-foreground">{eyebrow}</p>
@@ -442,7 +466,7 @@ export function DetailPanel({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="shrink-0 rounded-lg p-2 text-muted-foreground transition hover:bg-white/[0.06] hover:text-foreground"
+                className="shrink-0 rounded-lg p-2 text-muted-foreground transition hover:bg-[var(--fill-2)] hover:text-foreground"
               >
                 <XIcon className="h-4 w-4" />
               </button>
@@ -451,7 +475,7 @@ export function DetailPanel({
             <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
             {footer && (
-              <div className="border-t border-white/[0.06] px-6 py-4">{footer}</div>
+              <div className="border-t border-[var(--line-1)] px-6 py-4">{footer}</div>
             )}
           </motion.aside>
         </>
@@ -472,7 +496,7 @@ export function DetailField({
   icon?: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="border-b border-white/[0.05] py-3 last:border-0">
+    <div className="border-b border-[var(--line-1)] py-3 last:border-0">
       <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
@@ -515,7 +539,7 @@ export function ToggleChip({
       className={`relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition-colors ${
         on
           ? "bg-emerald-400/12 text-emerald-300 ring-emerald-400/30 hover:bg-emerald-400/20"
-          : "bg-white/[0.05] text-muted-foreground ring-white/[0.09] hover:bg-white/[0.09]"
+          : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)] hover:bg-[var(--fill-3)]"
       }`}
     >
       <motion.span

@@ -12,4 +12,21 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  nitro: {
+    // Build a plain Node server, NOT the scaffold's default `cloudflare-module`.
+    //
+    // This app cannot run on Cloudflare Workers: the database is a real file
+    // (data/app.db, via node:sqlite) and uploaded photos are real files under
+    // data/uploads/. Workers have neither a filesystem nor node:sqlite, so a
+    // Cloudflare build would fail at runtime rather than at build time — the
+    // worst place to find out.
+    //
+    // `node-server` emits .output/server/index.mjs, started with
+    // `node .output/server/index.mjs`. Deploy to a host with a persistent
+    // disk mounted at data/ (Railway/Render/Fly/a VPS).
+    //
+    // Nitro's own auto-detection (NITRO_PRESET, or Vercel/Netlify env vars)
+    // still overrides this, so don't build from inside one of those CIs.
+    preset: "node-server",
+  },
 });

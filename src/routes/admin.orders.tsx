@@ -34,7 +34,7 @@ type PayStatus = "unpaid" | "partial" | "paid" | "refunded";
 const payStyles: Record<PayStatus, string> = {
   paid: "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25",
   partial: "bg-amber-400/12 text-amber-300 ring-amber-400/25",
-  unpaid: "bg-white/[0.05] text-muted-foreground ring-white/[0.08]",
+  unpaid: "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]",
   refunded: "bg-destructive/12 text-destructive ring-destructive/25",
 };
 
@@ -117,7 +117,7 @@ function Orders() {
       </div>
 
       <div className="my-5 flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap gap-0.5 rounded-xl bg-white/[0.04] p-1 ring-1 ring-inset ring-white/[0.06]">
+        <div className="flex flex-wrap gap-0.5 rounded-xl bg-[var(--fill-2)] p-1 ring-1 ring-inset ring-[var(--line-1)]">
           {(["all", "unpaid", "partial", "paid", "refunded"] as const).map((f) => (
             <button
               key={f}
@@ -125,7 +125,7 @@ function Orders() {
               onClick={() => setFilter(f)}
               className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold capitalize transition-colors ${
                 filter === f
-                  ? "bg-white/[0.09] text-foreground ring-1 ring-inset ring-white/[0.08]"
+                  ? "bg-[var(--fill-3)] text-foreground ring-1 ring-inset ring-[var(--line-2)]"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -166,7 +166,7 @@ function Orders() {
                     <span className="truncate text-[14px] font-semibold text-foreground">
                       {o.client?.name ?? "—"}
                     </span>
-                    <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    <span className="rounded-md bg-[var(--fill-2)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                       {o.reference}
                     </span>
                     <PayPill status={o.paymentStatus as PayStatus} />
@@ -272,7 +272,7 @@ function OrderPanel({
               {order.lines.map((l, i) => (
                 <div
                   key={i}
-                  className="flex items-start justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2.5"
+                  className="flex items-start justify-between gap-3 rounded-lg bg-[var(--fill-1)] px-3 py-2.5"
                 >
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium text-foreground">{l.label}</p>
@@ -291,7 +291,7 @@ function OrderPanel({
               ))}
             </div>
 
-            <div className="mt-3 flex items-baseline justify-between border-t border-white/[0.08] pt-3">
+            <div className="mt-3 flex items-baseline justify-between border-t border-[var(--line-2)] pt-3">
               <span className="text-[13px] font-semibold text-muted-foreground">Order total</span>
               <span className="tnum text-2xl font-bold text-primary">{money(newTotal)}</span>
             </div>
@@ -351,7 +351,7 @@ function OrderPanel({
                       className={`rounded-lg px-3 py-2 text-[12px] font-semibold capitalize ring-1 ring-inset transition ${
                         status === s
                           ? payStyles[s]
-                          : "bg-white/[0.03] text-muted-foreground ring-white/[0.08] hover:bg-white/[0.07]"
+                          : "bg-[var(--fill-1)] text-muted-foreground ring-[var(--line-2)] hover:bg-[var(--fill-3)]"
                       }`}
                     >
                       {s}

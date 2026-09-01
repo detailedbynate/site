@@ -117,6 +117,35 @@
   --shadow-glow: 0 6px 24px -8px oklch(0.7 0.135 245 / 0.5);
   --shadow-glass: 0 12px 36px -18px oklch(0.1 0.02 258 / 0.8);
 
+  /* ------------------------------------------------------------------
+     Surface ladder. The admin used to hardcode `white/[0.0x]` for every
+     hairline and panel fill, which is invisible on a light background —
+     so light mode was impossible without touching 200 class names.
+     Routing them through variables means one theme swap does the work.
+       line-*  borders and rings, faintest to strongest
+       fill-*  panel fills, faintest to strongest
+     ------------------------------------------------------------------ */
+  --line-1: oklch(1 0 0 / 0.06);
+  --line-2: oklch(1 0 0 / 0.085);
+  --line-3: oklch(1 0 0 / 0.13);
+  --fill-1: oklch(1 0 0 / 0.025);
+  --fill-2: oklch(1 0 0 / 0.05);
+  --fill-3: oklch(1 0 0 / 0.09);
+  --scrim: oklch(0 0 0 / 0.6);
+
+  /* Drifting background washes. Deliberately weak — these sit under dense
+     tables, so anything stronger fights the text for attention. */
+  --ambient-1: radial-gradient(circle, oklch(0.55 0.16 258 / 0.16), transparent 70%);
+  --ambient-2: radial-gradient(circle, oklch(0.5 0.14 235 / 0.13), transparent 70%);
+  --ambient-3: radial-gradient(circle, oklch(0.45 0.13 275 / 0.11), transparent 70%);
+  /* A cool blue tilt across the whole page, darkest bottom-right. */
+  --ambient-base: linear-gradient(
+    160deg,
+    oklch(0.23 0.026 258) 0%,
+    oklch(0.195 0.018 252) 45%,
+    oklch(0.17 0.014 248) 100%
+  );
+
   background-color: var(--background);
   /* Flat, quiet ground — no aurora wash behind a data-dense screen. */
   background-image: none;
@@ -124,6 +153,107 @@
   font-family: var(--font-ui);
   font-feature-settings: "cv02", "cv03", "cv04", "ss01";
   letter-spacing: -0.006em;
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease;
+}
+
+/* --------------------------------------------------------------------------
+   Light mode. Same layout, same accent, inverted ground. Modelled on the
+   reference dashboard: near-white blue-tinted page, pure-white cards, and
+   borders that are dark-on-light rather than white-on-dark.
+   -------------------------------------------------------------------------- */
+.admin-theme.admin-light,
+:root.admin-light .admin-theme {
+  --background: oklch(0.972 0.008 250);
+  --foreground: oklch(0.26 0.022 258);
+  --card: oklch(1 0 0);
+  --popover: oklch(1 0 0);
+  --primary: oklch(0.55 0.19 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-glow: oklch(0.65 0.15 240);
+  --secondary: oklch(0.955 0.01 250);
+  --secondary-foreground: oklch(0.3 0.022 258);
+  --muted: oklch(0.955 0.01 250);
+  --muted-foreground: oklch(0.52 0.018 258);
+  --accent: oklch(0.55 0.19 258);
+  --border: oklch(0.9 0.012 250);
+  --input: oklch(0.955 0.01 250);
+  --ring: oklch(0.55 0.19 258);
+  --destructive: oklch(0.55 0.2 22);
+
+  --brand-deep: oklch(0.95 0.015 250);
+  --gradient-brand: linear-gradient(135deg, oklch(0.56 0.19 258), oklch(0.63 0.15 232));
+  --shadow-glow: 0 6px 22px -10px oklch(0.55 0.19 258 / 0.45);
+  --shadow-glass: 0 10px 30px -20px oklch(0.4 0.04 258 / 0.35);
+
+  --line-1: oklch(0.45 0.03 258 / 0.1);
+  --line-2: oklch(0.45 0.03 258 / 0.16);
+  --line-3: oklch(0.45 0.03 258 / 0.24);
+  --fill-1: oklch(0.45 0.03 258 / 0.028);
+  --fill-2: oklch(0.45 0.03 258 / 0.055);
+  --fill-3: oklch(0.45 0.03 258 / 0.095);
+  --scrim: oklch(0.3 0.03 258 / 0.4);
+}
+
+/* Cards in light mode are solid white with a real shadow — translucency
+   over a light ground just looks muddy. */
+.admin-theme.admin-light .liquid-glass,
+.admin-theme.admin-light .glass-strong,
+:root.admin-light .admin-theme .liquid-glass,
+:root.admin-light .admin-theme .glass-strong {
+  background: oklch(1 0 0);
+  backdrop-filter: none;
+  border: 1px solid var(--line-1);
+  box-shadow: 0 1px 2px oklch(0.4 0.04 258 / 0.05), 0 8px 24px -16px oklch(0.4 0.04 258 / 0.28);
+}
+
+.admin-theme.admin-light .glass,
+:root.admin-light .admin-theme .glass {
+  background: oklch(1 0 0 / 0.75);
+  backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid var(--line-1);
+  box-shadow: none;
+}
+
+/* The sidebar and sticky header read as white panels, not dark washes. */
+.admin-theme.admin-light .admin-panel,
+:root.admin-light .admin-theme .admin-panel {
+  background: oklch(1 0 0 / 0.8);
+}
+
+.admin-theme.admin-light,
+:root.admin-light .admin-theme {
+  /* Same idea in light mode, an order of magnitude softer — colour reads far
+     more strongly against white than it does against near-black. */
+  --ambient-1: radial-gradient(circle, oklch(0.62 0.14 258 / 0.1), transparent 70%);
+  --ambient-2: radial-gradient(circle, oklch(0.66 0.12 232 / 0.085), transparent 70%);
+  --ambient-3: radial-gradient(circle, oklch(0.6 0.12 275 / 0.07), transparent 70%);
+  --ambient-base: linear-gradient(
+    160deg,
+    oklch(0.985 0.008 250) 0%,
+    oklch(0.965 0.012 248) 55%,
+    oklch(0.945 0.016 245) 100%
+  );
+}
+
+/* Painted on its own layer so the gradient can differ per theme without the
+   element's own background-color fighting it. */
+.admin-theme .admin-ambient-base {
+  background-image: var(--ambient-base);
+}
+
+/*
+  Respect a reduced-motion preference: keep the colour, drop the drift.
+  `animation`/`transition` are cleared here, and Motion's JS-driven transforms
+  are neutralised by pinning the transform.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .admin-theme .ambient {
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .admin-theme h1,

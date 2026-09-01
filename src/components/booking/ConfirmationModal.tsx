@@ -16,6 +16,9 @@ export type ConfirmationDetails = {
   vehicle: string;
   notes: string;
   total: number;
+  /** Set only when the server actually honoured a discount code. */
+  discountCode?: string;
+  discountAmount?: number;
 };
 
 export function ConfirmationModal({
@@ -160,6 +163,15 @@ export function ConfirmationModal({
                 )}
               </Block>
             </motion.div>
+
+            {details.discountCode && details.discountAmount ? (
+              <div className="mt-5 flex items-baseline justify-between px-7">
+                <span className="text-sm font-semibold text-primary">
+                  Code {details.discountCode} applied
+                </span>
+                <span className="text-sm font-bold text-primary">−${details.discountAmount}</span>
+              </div>
+            ) : null}
 
             <div className="mt-5 flex items-baseline justify-between border-t border-border px-7 pt-4">
               <span className="text-sm font-semibold text-muted-foreground">Total due</span>

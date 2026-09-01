@@ -33,6 +33,8 @@ export type CatalogItem = {
   /** Services only — pills on the booking form and homepage card. */
   features?: string[];
   description?: string;
+  /** Services only — product cost per job, for the margin view on Finance. */
+  materialCost?: number;
 };
 
 type Props = {
@@ -59,6 +61,7 @@ const blank = (sortOrder: number): CatalogItem => ({
   sortOrder,
   features: [],
   description: "",
+  materialCost: 0,
 });
 
 /** URL/id-safe slug generated from the title for brand-new items. */
@@ -95,6 +98,7 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                 sortOrder: s.sortOrder,
                 features: "features" in s ? (s.features ?? []) : [],
                 description: "description" in s ? (s.description ?? "") : "",
+                materialCost: "materialCost" in s ? (s.materialCost ?? 0) : 0,
               }
             : {
                 id: s.id,
@@ -227,7 +231,7 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                   </span>
                 </div>
 
-                <div className="mt-4 flex gap-2 border-t border-white/[0.06] pt-3">
+                <div className="mt-4 flex gap-2 border-t border-[var(--line-1)] pt-3">
                   <Button
                     size="sm"
                     onClick={() => {
@@ -263,7 +267,7 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
               exit={{ scale: 0.97, y: 10 }}
               transition={{ type: "spring", stiffness: 240, damping: 26 }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
             >
               <div className="flex items-start justify-between">
                 <h2 className="text-lg font-bold tracking-tight text-foreground">
@@ -316,6 +320,21 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                 </div>
                 {kind === "service" && (
                   <>
+                    <Field
+                      label="Product cost per job ($)"
+                      hint="Roughly what the chemicals and pads cost you. Drives the margin estimate on Finance — leave at 0 to skip it."
+                    >
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={draft.materialCost ?? 0}
+                        onChange={(e) =>
+                          setDraft({ ...draft, materialCost: Number(e.target.value) })
+                        }
+                      />
+                    </Field>
                     <Field
                       label="Description"
                       hint="Shown on the homepage card and under the name when booking."

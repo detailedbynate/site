@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Globe, Image as ImageIcon, Images, Plus, Search, Trash2, Upload } from "lucide-react";
 
@@ -11,6 +11,7 @@ import {
   saveSiteSettings,
   uploadPhoto,
 } from "@/lib/api/admin.functions";
+import { clearHeroImage, getHeroImage, setHeroImage } from "@/lib/api/content.functions";
 import {
   Button,
   ErrorNote,
@@ -171,7 +172,7 @@ function Seo() {
           </div>
 
           {/* Live Google-style preview */}
-          <div className="mt-6 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+          <div className="mt-6 rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
             <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               Google preview
             </p>
@@ -236,20 +237,20 @@ function Seo() {
             </Field>
           </div>
 
-          <div className="mt-6 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+          <div className="mt-6 rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
             <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               Social preview
             </p>
-            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+            <div className="overflow-hidden rounded-lg border border-[var(--line-2)]">
               {s.ogImageUrl ? (
                 <img
                   src={s.ogImageUrl}
                   alt=""
-                  className="aspect-[1200/630] w-full bg-white/[0.03] object-cover"
+                  className="aspect-[1200/630] w-full bg-[var(--fill-1)] object-cover"
                   onError={(e) => (e.currentTarget.style.display = "none")}
                 />
               ) : (
-                <div className="flex aspect-[1200/630] w-full items-center justify-center bg-white/[0.03] text-[11.5px] text-muted-foreground">
+                <div className="flex aspect-[1200/630] w-full items-center justify-center bg-[var(--fill-1)] text-[11.5px] text-muted-foreground">
                   <ImageIcon className="mr-1.5 h-3.5 w-3.5" /> No share image set
                 </div>
               )}
@@ -266,6 +267,8 @@ function Seo() {
           </div>
         </GlassCard>
       </div>
+
+      <HeroImageCard onOk={flash} onError={setError} />
 
       <GalleryCard pairs={pairs} reload={load} onError={setError} onOk={flash} />
     </>
@@ -284,6 +287,9 @@ function GalleryCard({
   onOk: (m: string) => void;
 }) {
   const [label, setLabel] = useState("");
+  const [detail, setDetail] = useState("");
+  const [description, setDescription] = useState("");
+  const [packageLabel, setPackageLabel] = useState("");
   const [before, setBefore] = useState<{ id: string; url: string } | null>(null);
   const [after, setAfter] = useState<{ id: string; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -313,6 +319,9 @@ function GalleryCard({
       await saveGalleryPair({
         data: {
           label: label.trim(),
+          detail: detail.trim(),
+          description: description.trim(),
+          packageLabel: packageLabel.trim(),
           beforePhotoId: before.id,
           afterPhotoId: after.id,
           sortOrder: pairs?.length ?? 0,
@@ -320,6 +329,9 @@ function GalleryCard({
         },
       });
       setLabel("");
+      setDetail("");
+      setDescription("");
+      setPackageLabel("");
       setBefore(null);
       setAfter(null);
       onOk("Added to the gallery.");
@@ -340,7 +352,8 @@ function GalleryCard({
         </p>
       </div>
       <p className="mt-1 text-[12.5px] text-muted-foreground">
-        Shown on the public site. Upload a matching pair and give it a short label.
+        The only before/after work shown on the homepage and Results page — there are no stock
+        samples behind it any more, so whatever you add here is what visitors see.
       </p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
@@ -356,6 +369,24 @@ function GalleryCard({
               onChange={(e) => setLabel(e.target.value)}
             />
           </Field>
+          <Field label="Subtitle" hint="Optional">
+            <input
+              className={inputCls}
+              value={detail}
+              maxLength={80}
+              placeholder="Black sedan hood"
+              onChange={(e) => setDetail(e.target.value)}
+            />
+          </Field>
+          <Field label="Package used" hint="Optional">
+            <input
+              className={inputCls}
+              value={packageLabel}
+              maxLength={40}
+              placeholder="Diamond"
+              onChange={(e) => setPackageLabel(e.target.value)}
+            />
+          </Field>
           <Button
             variant="primary"
             loading={busy}
@@ -365,6 +396,18 @@ function GalleryCard({
             <Plus className="h-3.5 w-3.5" /> Add pair
           </Button>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <Field label="Description" hint="Optional. The paragraph under this pair on the Results page.">
+          <textarea
+            className={`${inputCls} min-h-[70px] resize-y`}
+            value={description}
+            maxLength={600}
+            placeholder="Swirl-marked factory black brought back to a wet, mirror-deep gloss."
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </Field>
       </div>
 
       {pairs && pairs.length > 0 && (
@@ -377,7 +420,7 @@ function GalleryCard({
                 initial={{ opacity: 0, scale: 0.96 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.96 }}
-                className="overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.02]"
+                className="overflow-hidden rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)]"
               >
                 <div className="grid grid-cols-2">
                   {[p.beforeUrl, p.afterUrl].map((u, i) => (
@@ -385,7 +428,7 @@ function GalleryCard({
                       {u ? (
                         <img src={u} alt="" className="h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full items-center justify-center bg-white/[0.04] text-[10px] text-muted-foreground">
+                        <div className="flex h-full items-center justify-center bg-[var(--fill-2)] text-[10px] text-muted-foreground">
                           missing
                         </div>
                       )}
@@ -436,7 +479,7 @@ function DropSlot({
       <button
         type="button"
         onClick={() => ref.current?.click()}
-        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-dashed border-white/[0.14] bg-white/[0.02] transition hover:border-primary/40"
+        className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-dashed border-[var(--line-3)] bg-[var(--fill-1)] transition hover:border-primary/40"
       >
         {value ? (
           <img src={value} alt="" className="h-full w-full object-cover" />
@@ -455,5 +498,122 @@ function DropSlot({
         onChange={(e) => onFile(e.target.files?.[0])}
       />
     </div>
+  );
+}
+
+// ========================= Hero background ==============================
+
+/**
+ * Swap the big photo behind the homepage headline.
+ *
+ * Downscaled to 1920px before upload — a phone photo is several megabytes and
+ * the hero is embedded in the page as a data URL, so the raw file would make
+ * the homepage enormous.
+ */
+function HeroImageCard({
+  onOk,
+  onError,
+}: {
+  onOk: (m: string) => void;
+  onError: (m: string) => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setUrl((await getHeroImage()).url);
+    } catch {
+      setUrl(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pick = async (file: File) => {
+    setBusy(true);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Couldn't process that image.");
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+
+      const base64 = canvas.toDataURL("image/jpeg", 0.82).split(",")[1] ?? "";
+      await setHeroImage({ data: { mime: "image/jpeg", base64 } });
+      onOk("Hero image updated. Reload the homepage to see it.");
+      await load();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard index={3} className="mt-5 p-6">
+      <div className="flex items-center gap-2.5">
+        <ImageIcon className="h-4 w-4 text-primary" />
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">
+          Homepage background
+        </p>
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted-foreground">
+        The photo behind the headline on your front page. A wide, dark shot works best — text
+        sits on top of it.
+      </p>
+
+      <div className="mt-5 overflow-hidden rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)]">
+        {url ? (
+          <img src={url} alt="Current homepage background" className="h-44 w-full object-cover" />
+        ) : (
+          <div className="flex h-44 items-center justify-center text-[12.5px] text-muted-foreground">
+            Using the bundled photo
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="primary" loading={busy} onClick={() => input.current?.click()}>
+          <Upload className="h-3.5 w-3.5" /> {url ? "Replace image" : "Upload image"}
+        </Button>
+        {url && (
+          <Button
+            onClick={async () => {
+              if (!confirm("Go back to the bundled photo?")) return;
+              setBusy(true);
+              try {
+                await clearHeroImage();
+                onOk("Reverted to the bundled photo.");
+                await load();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Use the default
+          </Button>
+        )}
+      </div>
+
+      <input
+        ref={input}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void pick(f);
+          e.target.value = "";
+        }}
+      />
+    </GlassCard>
   );
 }

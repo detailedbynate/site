@@ -5,12 +5,15 @@ import {
   CalendarCheck,
   CheckCircle2,
   Copy,
+  CreditCard,
   ExternalLink,
   Link2,
   Mail,
   Plug,
   RefreshCw,
+  Save,
   Unplug,
+  Webhook,
 } from "lucide-react";
 
 import {
@@ -25,6 +28,13 @@ import {
   setGoogleCalendar,
   testGoogleConnection,
 } from "@/lib/api/admin.functions";
+import {
+  disconnectStripe,
+  saveStripeSettings,
+  saveWebhookSettings,
+  testStripeConnection,
+  testWebhook,
+} from "@/lib/api/finance.functions";
 import {
   Button,
   ErrorNote,
@@ -143,7 +153,7 @@ function Integrations() {
       <GlassCard className="mt-5 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fill-2)]">
               <CalendarCheck className="h-5 w-5 text-primary" />
             </span>
             <div>
@@ -161,7 +171,7 @@ function Integrations() {
             className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] font-semibold ring-1 ring-inset ${
               g.connected
                 ? "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25"
-                : "bg-white/[0.05] text-muted-foreground ring-white/[0.09]"
+                : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]"
             }`}
           >
             <span
@@ -173,7 +183,7 @@ function Integrations() {
 
         {g.connected ? (
           <div className="mt-6 space-y-5">
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+            <div className="rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] px-4 py-3">
               <p className="text-[11px] text-muted-foreground">Google account</p>
               <p className="mt-0.5 text-[13.5px] font-semibold text-foreground">
                 {g.accountEmail || "Connected account"}
@@ -360,7 +370,7 @@ function Integrations() {
       <GlassCard className="mt-5 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.06]">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fill-2)]">
               <Mail className="h-5 w-5 text-primary" />
             </span>
             <div>
@@ -380,7 +390,7 @@ function Integrations() {
             className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] font-semibold ring-1 ring-inset ${
               data.email.configured
                 ? "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25"
-                : "bg-white/[0.05] text-muted-foreground ring-white/[0.09]"
+                : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]"
             }`}
           >
             <span
@@ -391,14 +401,18 @@ function Integrations() {
         </div>
       </GlassCard>
 
+      <StripeCard data={data.stripe} onSaved={load} />
+
+      <WebhookCard data={data.webhook} onSaved={load} />
+
       <GlassCard className="mt-5 p-6">
         <div className="flex items-center gap-2.5">
           <Plug className="h-4 w-4 text-muted-foreground" />
           <p className="text-[15px] font-semibold tracking-tight text-foreground">Also planned</p>
         </div>
         <p className="mt-2 text-[12.5px] text-muted-foreground">
-          Stripe or Square for deposits, SMS reminders, and webhooks. Say the word and I'll wire
-          any of them up.
+          SMS reminders (Twilio), and accounting export to QuickBooks or Wave. Say the word and
+          either can be wired up.
         </p>
       </GlassCard>
     </>
@@ -507,7 +521,7 @@ function CalendarTemplateCard() {
               key={v}
               type="button"
               onClick={() => setBody((b) => `${b}{{${v}}}`)}
-              className="rounded-md bg-white/[0.05] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.1] hover:text-foreground"
+              className="rounded-md bg-[var(--fill-2)] px-2 py-1 font-mono text-[10.5px] text-muted-foreground ring-1 ring-inset ring-[var(--line-2)] transition hover:bg-[var(--fill-3)] hover:text-foreground"
             >
               {`{{${v}}}`}
             </button>
@@ -527,7 +541,7 @@ function CalendarTemplateCard() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+              <div className="rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
                 <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   Preview{preview.usedSample ? " (sample data — no bookings yet)" : ""}
                 </p>
@@ -555,7 +569,7 @@ function Step({
 }) {
   return (
     <li className="flex gap-3">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/[0.07] text-[11px] font-bold text-foreground">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--fill-3)] text-[11px] font-bold text-foreground">
         {n}
       </span>
       <div className="min-w-0 flex-1">
@@ -569,7 +583,7 @@ function Step({
 function CopyRow({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/[0.09] bg-black/25 px-3 py-2">
+    <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--line-2)] bg-black/25 px-3 py-2">
       <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">{value}</code>
       <button
         type="button"
@@ -582,7 +596,7 @@ function CopyRow({ value }: { value: string }) {
             /* clipboard blocked — the value is selectable on screen anyway */
           }
         }}
-        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-white/[0.08] hover:text-foreground"
+        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground"
       >
         {copied ? (
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
@@ -591,5 +605,358 @@ function CopyRow({ value }: { value: string }) {
         )}
       </button>
     </div>
+  );
+}
+
+// ============================ Stripe ====================================
+
+function StripeCard({
+  data,
+  onSaved,
+}: {
+  data: Awaited<ReturnType<typeof getIntegrations>>["stripe"];
+  onSaved: () => Promise<void>;
+}) {
+  const [secret, setSecret] = useState("");
+  const [publishable, setPublishable] = useState(data.publishableKey);
+  const [currency, setCurrency] = useState(data.currency);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = async (id: string, fn: () => Promise<string>) => {
+    setBusy(id);
+    setNote(null);
+    try {
+      setNote({ ok: true, text: await fn() });
+      await onSaved();
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : "That didn't work." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <GlassCard className="mt-5 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fill-2)]">
+            <CreditCard className="h-5 w-5 text-primary" />
+          </span>
+          <div>
+            <p className="text-[15px] font-semibold tracking-tight text-foreground">Stripe</p>
+            <p className="mt-0.5 max-w-xl text-[12.5px] text-muted-foreground">
+              Send a customer a card payment link for what they owe. Created from the Payments
+              page once connected.
+            </p>
+          </div>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] font-semibold ring-1 ring-inset ${
+            data.configured
+              ? "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25"
+              : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]"
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${data.configured ? "bg-emerald-400" : "bg-muted-foreground/60"}`}
+          />
+          {data.configured
+            ? data.accountName
+              ? `${data.accountName}${data.livemode ? "" : " (test mode)"}`
+              : `Key ${data.keyHint}`
+            : "Not connected"}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <Field
+          label="Secret key"
+          hint={
+            data.configured
+              ? `Saved (${data.keyHint}). Enter a new one to replace it.`
+              : "From Stripe, under Developers then API keys. Starts with sk_"
+          }
+        >
+          <input
+            className={inputCls}
+            type="password"
+            value={secret}
+            placeholder={data.configured ? "••••••••••••" : "sk_test_…"}
+            autoComplete="off"
+            onChange={(e) => setSecret(e.target.value)}
+          />
+        </Field>
+        <Field label="Publishable key" hint="Optional, safe to expose. Starts with pk_">
+          <input
+            className={inputCls}
+            value={publishable}
+            placeholder="pk_test_…"
+            autoComplete="off"
+            onChange={(e) => setPublishable(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 max-w-[220px]">
+        <Field label="Currency">
+          <select className={inputCls} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option value="cad">CAD — Canadian dollar</option>
+            <option value="usd">USD — US dollar</option>
+            <option value="gbp">GBP — Pound sterling</option>
+            <option value="eur">EUR — Euro</option>
+            <option value="aud">AUD — Australian dollar</option>
+          </select>
+        </Field>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <Button
+          variant="primary"
+          loading={busy === "save"}
+          onClick={() =>
+            run("save", async () => {
+              await saveStripeSettings({
+                data: {
+                  // Blank means "leave the stored key alone" — otherwise
+                  // saving the currency would wipe the key.
+                  ...(secret.trim() ? { stripeSecretKey: secret.trim() } : {}),
+                  stripePublishableKey: publishable.trim(),
+                  stripeCurrency: currency,
+                },
+              });
+              setSecret("");
+              return "Saved.";
+            })
+          }
+        >
+          <Save className="h-3.5 w-3.5" /> Save
+        </Button>
+
+        <Button
+          loading={busy === "test"}
+          disabled={!data.configured}
+          onClick={() =>
+            run("test", async () => {
+              const info = await testStripeConnection();
+              return `Connected to ${info.accountName}${info.country ? ` (${info.country})` : ""}${
+                info.livemode ? "" : " — test mode"
+              }.`;
+            })
+          }
+        >
+          Test connection
+        </Button>
+
+        {data.configured && (
+          <Button
+            variant="danger"
+            loading={busy === "off"}
+            onClick={() =>
+              run("off", async () => {
+                if (!confirm("Disconnect Stripe? Existing bookings are unaffected.")) {
+                  throw new Error("Cancelled.");
+                }
+                await disconnectStripe();
+                return "Disconnected.";
+              })
+            }
+          >
+            Disconnect
+          </Button>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {note && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className={`mt-3 text-[12.5px] font-semibold ${note.ok ? "text-emerald-300" : "text-destructive"}`}
+          >
+            {note.text}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      <p className="mt-4 rounded-lg bg-[var(--fill-1)] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-muted-foreground ring-1 ring-inset ring-[var(--line-1)]">
+        The site never handles card numbers — Stripe hosts the payment page. Deposits at booking
+        time, and marking a job paid automatically when a link is settled, would each need more
+        wiring: right now a link is created on demand and you mark it paid once the money lands.
+      </p>
+    </GlassCard>
+  );
+}
+
+// ============================ Webhooks ==================================
+
+const WEBHOOK_EVENTS = [
+  { id: "booking_created", label: "Booking created" },
+  { id: "booking_cancelled", label: "Booking cancelled" },
+  { id: "booking_completed", label: "Job completed" },
+] as const;
+
+type WebhookEventId = (typeof WEBHOOK_EVENTS)[number]["id"];
+
+function WebhookCard({
+  data,
+  onSaved,
+}: {
+  data: Awaited<ReturnType<typeof getIntegrations>>["webhook"];
+  onSaved: () => Promise<void>;
+}) {
+  const [url, setUrl] = useState(data.url);
+  const [secret, setSecret] = useState("");
+  const [events, setEvents] = useState<string[]>(data.events);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = async (id: string, fn: () => Promise<string>) => {
+    setBusy(id);
+    setNote(null);
+    try {
+      setNote({ ok: true, text: await fn() });
+      await onSaved();
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : "That didn't work." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <GlassCard className="mt-5 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--fill-2)]">
+            <Webhook className="h-5 w-5 text-primary" />
+          </span>
+          <div>
+            <p className="text-[15px] font-semibold tracking-tight text-foreground">Webhooks</p>
+            <p className="mt-0.5 max-w-xl text-[12.5px] text-muted-foreground">
+              POST every booking event to a URL of your choice — Zapier, Make, n8n, or your own
+              script. This is how you connect anything not listed here.
+            </p>
+          </div>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11.5px] font-semibold ring-1 ring-inset ${
+            data.url
+              ? "bg-emerald-400/12 text-emerald-300 ring-emerald-400/25"
+              : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)]"
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${data.url ? "bg-emerald-400" : "bg-muted-foreground/60"}`}
+          />
+          {data.url ? "Active" : "Not set up"}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <Field label="Endpoint URL" hint="Must use https.">
+          <input
+            className={inputCls}
+            value={url}
+            placeholder="https://hooks.zapier.com/…"
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </Field>
+        <Field
+          label="Signing secret"
+          hint={
+            data.hasSecret
+              ? "Saved. Enter a new value to replace it."
+              : "Optional. Sent as an HMAC-SHA256 digest in x-dbn-signature."
+          }
+        >
+          <input
+            className={inputCls}
+            type="password"
+            value={secret}
+            placeholder={data.hasSecret ? "••••••••••••" : "any long random string"}
+            autoComplete="off"
+            onChange={(e) => setSecret(e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-2 text-[12px] font-medium text-muted-foreground">Send on</p>
+        <div className="flex flex-wrap gap-1.5">
+          {WEBHOOK_EVENTS.map((e) => {
+            const on = events.includes(e.id);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() =>
+                  setEvents((cur) =>
+                    cur.includes(e.id) ? cur.filter((x) => x !== e.id) : [...cur, e.id],
+                  )
+                }
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold ring-1 ring-inset transition ${
+                  on
+                    ? "bg-primary/12 text-primary ring-primary/30"
+                    : "bg-[var(--fill-2)] text-muted-foreground ring-[var(--line-2)] hover:text-foreground"
+                }`}
+              >
+                {e.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <Button
+          variant="primary"
+          loading={busy === "save"}
+          onClick={() =>
+            run("save", async () => {
+              await saveWebhookSettings({
+                data: {
+                  webhookUrl: url.trim(),
+                  ...(secret.trim() ? { webhookSecret: secret.trim() } : {}),
+                  webhookEvents: events as WebhookEventId[],
+                },
+              });
+              setSecret("");
+              return "Saved.";
+            })
+          }
+        >
+          <Save className="h-3.5 w-3.5" /> Save
+        </Button>
+        <Button
+          loading={busy === "test"}
+          disabled={!data.url}
+          onClick={() =>
+            run("test", async () => {
+              const res = await testWebhook();
+              return res.ok
+                ? `Endpoint replied ${res.status}.`
+                : `Endpoint replied ${res.status} — it received the call but rejected it.`;
+            })
+          }
+        >
+          Send test
+        </Button>
+      </div>
+
+      <AnimatePresence>
+        {note && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className={`mt-3 text-[12.5px] font-semibold ${note.ok ? "text-emerald-300" : "text-destructive"}`}
+          >
+            {note.text}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </GlassCard>
   );
 }

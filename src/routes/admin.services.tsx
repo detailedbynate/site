@@ -37,6 +37,7 @@ function Services() {
               description: item.description ?? "",
               active: item.active,
               sortOrder: item.sortOrder,
+              materialCost: item.materialCost ?? 0,
             },
           })
         }

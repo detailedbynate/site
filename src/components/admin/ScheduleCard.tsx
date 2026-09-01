@@ -44,7 +44,7 @@ function WeekEditor({
       {week.map((day, i) => (
         <div
           key={i}
-          className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-2.5"
         >
           <span className="w-[84px] shrink-0 text-[13px] font-medium text-foreground">
             {DAYS[i]}
@@ -67,7 +67,7 @@ function WeekEditor({
                 <select
                   value={day.openHour}
                   onChange={(e) => set(i, { openHour: Number(e.target.value) })}
-                  className="rounded-lg border border-white/[0.09] bg-white/[0.03] px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-primary/60"
+                  className="rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-primary/60"
                 >
                   {Array.from({ length: 24 }, (_, h) => (
                     <option key={h} value={h}>
@@ -79,7 +79,7 @@ function WeekEditor({
                 <select
                   value={day.closeHour}
                   onChange={(e) => set(i, { closeHour: Number(e.target.value) })}
-                  className="rounded-lg border border-white/[0.09] bg-white/[0.03] px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-primary/60"
+                  className="rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-2 py-1.5 text-[12px] text-foreground outline-none focus:border-primary/60"
                 >
                   {Array.from({ length: 24 }, (_, h) => h + 1).map((h) => (
                     <option key={h} value={h}>
@@ -107,7 +107,7 @@ function WeekEditor({
                 )
               }
               title="Apply these hours to every open day"
-              className="ml-auto rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-white/[0.07] hover:text-foreground"
+              className="ml-auto rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground"
             >
               <Copy className="mr-1 inline h-3 w-3" />
               Apply to all
@@ -203,7 +203,7 @@ export function ScheduleCard() {
       </p>
       <WeekEditor week={s.weeklySchedule} onChange={(w) => setS({ ...s, weeklySchedule: w })} />
 
-      <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5">
+      <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-2)] pt-5">
         <div>
           <p className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
             <Truck className="h-3.5 w-3.5 text-primary" />
@@ -238,7 +238,7 @@ export function ScheduleCard() {
                   onClick={() =>
                     setS({ ...s, mobileSchedule: s.weeklySchedule.map((d) => ({ ...d })) })
                   }
-                  className="rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-white/[0.07] hover:text-foreground"
+                  className="rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground"
                 >
                   Copy from shop hours
                 </button>
@@ -252,7 +252,7 @@ export function ScheduleCard() {
         )}
       </AnimatePresence>
 
-      <div className="mt-7 grid gap-4 border-t border-white/[0.07] pt-5 sm:grid-cols-3">
+      <div className="mt-7 grid gap-4 border-t border-[var(--line-2)] pt-5 sm:grid-cols-3">
         <Field label="Slot step (minutes)" hint="How far apart start times are.">
           <input
             className={inputCls}

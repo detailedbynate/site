@@ -10,7 +10,9 @@ import {
   Home,
   Loader2,
   MapPin,
+  Tag,
   Truck,
+  X,
 } from "lucide-react";
 
 import { StepProgress } from "./StepProgress";
@@ -23,7 +25,7 @@ import {
   type CustomerInfo,
 } from "./CustomerInfoStep";
 import { ConfirmationModal, type ConfirmationDetails } from "./ConfirmationModal";
-import { createBooking, getCatalog } from "@/lib/api/booking.functions";
+import { checkCoupon, createBooking, getCatalog } from "@/lib/api/booking.functions";
 import {
   quote,
   type AddOnDef,
@@ -113,6 +115,18 @@ export function BookingWizard({
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
 
+  // Discount code. `applied` only ever holds a code the SERVER accepted —
+  // the client never decides what a code is worth.
+  const [codeInput, setCodeInput] = useState("");
+  const [applied, setApplied] = useState<{
+    code: string;
+    discount: number;
+    newTotal: number;
+    label: string;
+  } | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeBusy, setCodeBusy] = useState(false);
+
   // The catalog is editable from /admin/services, so it's fetched rather
   // than imported — prices and packages can change without a redeploy.
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -153,6 +167,49 @@ export function BookingWizard({
       }),
     [chosenService, chosenAddOns, location, travelFee],
   );
+
+  // What the customer actually pays. Still only a preview — createBooking
+  // recomputes the price and re-checks the code before anything is saved.
+  const payable = applied ? Math.max(0, total - applied.discount) : total;
+
+  const applyCode = async () => {
+    if (!service || !codeInput.trim()) return;
+    setCodeBusy(true);
+    setCodeError(null);
+    try {
+      const res = await checkCoupon({
+        data: {
+          code: codeInput.trim(),
+          serviceId: service,
+          addOnIds: picked,
+          location,
+        },
+      });
+      if (res.ok) {
+        setApplied({
+          code: res.code,
+          discount: res.discount,
+          newTotal: res.newTotal,
+          label: res.label,
+        });
+        setCodeInput("");
+      } else {
+        setApplied(null);
+        setCodeError(res.reason);
+      }
+    } catch {
+      setCodeError("Couldn't check that code. Try again.");
+    } finally {
+      setCodeBusy(false);
+    }
+  };
+
+  // A code priced against one selection shouldn't survive a change to that
+  // selection — drop it and make them re-apply rather than show a stale total.
+  useEffect(() => {
+    setApplied(null);
+    setCodeError(null);
+  }, [service, picked, location]);
 
   const dateLabel = date ? longDate.format(new Date(`${date}T12:00:00`)) : "—";
   const timeLabel = time ? formatTime12h(time) : "—";
@@ -235,6 +292,7 @@ export function BookingWizard({
               .map((f) => [f.label, (custom[f.id] ?? "").trim()])
               .filter(([, v]) => v),
           ),
+          couponCode: applied?.code,
         },
       });
 
@@ -252,7 +310,11 @@ export function BookingWizard({
         email: customer.email,
         vehicle: `${customer.year} ${customer.make} ${customer.model} · ${customer.color}`,
         notes: customer.notes.trim(),
-        total: res.booking.totalPrice,
+        // What they'll actually pay: the server's recomputed price less the
+        // discount the server itself decided to honour.
+        total: res.booking.totalPrice - (res.booking.discount ?? 0),
+        discountCode: res.appliedCoupon,
+        discountAmount: res.discount || undefined,
       });
     } catch (err) {
       // Most likely cause: the slot was taken between loading it and
@@ -584,16 +646,103 @@ export function BookingWizard({
                     />
                     <Row label="Notes" value={customer.notes.trim() || "None"} />
                   </dl>
+                  {/* Discount code */}
+                  <div className="mt-5 border-t border-border pt-4">
+                    <AnimatePresence mode="wait" initial={false}>
+                      {applied ? (
+                        <motion.div
+                          key="applied"
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          className="flex flex-wrap items-center gap-2 rounded-2xl bg-primary/10 px-3.5 py-3 ring-1 ring-inset ring-primary/25"
+                        >
+                          <Tag className="h-4 w-4 shrink-0 text-primary" />
+                          <span className="text-sm font-bold tracking-wide text-primary">
+                            {applied.code}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{applied.label}</span>
+                          <span className="ml-auto text-sm font-bold text-primary">
+                            −${applied.discount}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setApplied(null)}
+                            aria-label="Remove discount code"
+                            className="rounded-lg p-1 text-muted-foreground transition hover:bg-background/40 hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="entry"
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                        >
+                          <div className="flex gap-2">
+                            <input
+                              value={codeInput}
+                              maxLength={40}
+                              placeholder="Discount code"
+                              aria-label="Discount code"
+                              onChange={(e) => {
+                                setCodeInput(e.target.value.toUpperCase());
+                                setCodeError(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void applyCode();
+                                }
+                              }}
+                              className="min-w-0 flex-1 rounded-2xl border border-border bg-background/40 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-foreground outline-none transition placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-muted-foreground focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void applyCode()}
+                              disabled={!codeInput.trim() || codeBusy}
+                              className="btn-liquid shrink-0 rounded-2xl px-5 py-3 text-sm font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={{ backgroundImage: "var(--gradient-brand)" }}
+                            >
+                              {codeBusy ? "Checking…" : "Apply"}
+                            </button>
+                          </div>
+                          <AnimatePresence>
+                            {codeError && (
+                              <motion.p
+                                initial={{ opacity: 0, y: -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                className="mt-2 text-xs font-semibold text-destructive"
+                              >
+                                {codeError}
+                              </motion.p>
+                            )}
+                          </AnimatePresence>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
                   <div className="mt-5 flex items-baseline justify-between border-t border-border pt-4">
                     <span className="text-sm font-semibold text-muted-foreground">Total</span>
-                    <motion.span
-                      key={total}
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-3xl font-bold text-primary"
-                    >
-                      ${total}
-                    </motion.span>
+                    <div className="text-right">
+                      {applied && (
+                        <span className="mr-2 text-base font-semibold text-muted-foreground line-through">
+                          ${total}
+                        </span>
+                      )}
+                      <motion.span
+                        key={payable}
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="text-3xl font-bold text-primary"
+                      >
+                        ${payable}
+                      </motion.span>
+                    </div>
                   </div>
                 </motion.div>
               </div>

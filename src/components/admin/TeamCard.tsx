@@ -180,14 +180,14 @@ export function TeamCard() {
             layout
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0, transition: { delay: i * 0.04 } }}
-            className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+            className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-4 py-3"
           >
             <Avatar name={m.name} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13.5px] font-semibold text-foreground">
                 {m.name}
                 {m.id === meId && (
-                  <span className="ml-2 rounded bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  <span className="ml-2 rounded bg-[var(--fill-3)] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                     you
                   </span>
                 )}
@@ -201,7 +201,7 @@ export function TeamCard() {
             <select
               value={m.role}
               onChange={(e) => changeRole(m, e.target.value as "owner" | "staff")}
-              className="rounded-lg border border-white/[0.09] bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-semibold capitalize text-foreground outline-none focus:border-primary/60"
+              className="rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-2.5 py-1.5 text-[12px] font-semibold capitalize text-foreground outline-none focus:border-primary/60"
             >
               <option value="owner">Owner</option>
               <option value="staff">Staff</option>
@@ -324,7 +324,7 @@ function Modal({
         exit={{ scale: 0.98, y: 8 }}
         transition={{ type: "spring", stiffness: 280, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+        className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
       >
         <div className="mb-5 flex items-start justify-between">
           <h2 className="text-lg font-bold tracking-tight text-foreground">{title}</h2>

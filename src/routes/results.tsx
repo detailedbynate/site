@@ -4,12 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Sparkles, Star, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { getPublicGallery } from "@/lib/api/booking.functions";
-import before1 from "@/assets/before-1.jpg";
-import after1 from "@/assets/after-1.jpg";
-import before2 from "@/assets/before-2.jpg";
-import after2 from "@/assets/after-2.jpg";
-import before3 from "@/assets/before-3.jpg";
-import after3 from "@/assets/after-3.jpg";
 
 export const Route = createFileRoute("/results")({
   // Uploaded pairs (Admin → SEO & branding) are shown ahead of the bundled
@@ -49,48 +43,22 @@ function Counter({ to, suffix = "" }: { to: number; suffix?: string }) {
   return <span ref={ref}>{display}{suffix}</span>;
 }
 
-const results = [
-  {
-    label: "Paint correction",
-    detail: "Black sedan hood",
-    before: before1,
-    after: after1,
-    desc: "Swirl-marked, oxidized factory black paint brought back to a wet, mirror-deep gloss with a two-stage polish and ceramic seal.",
-    package: "Diamond",
-  },
-  {
-    label: "Interior reset",
-    detail: "Tan leather cabin",
-    before: before2,
-    after: after2,
-    desc: "Stained leather seats, dusty dash, and grimy cupholders steam-cleaned, conditioned, and protected. Smells like new again.",
-    package: "Gold",
-  },
-  {
-    label: "Wheel & tire deep clean",
-    detail: "Off-road SUV",
-    before: before3,
-    after: after3,
-    desc: "Caked-on brake dust and trail mud removed without damaging the finish. Tires dressed for a clean satin shine.",
-    package: "Silver",
-  },
-];
+// No bundled samples. Everything on this page is work the shop uploaded
+// itself under Admin -> SEO & branding, so nothing here is stock imagery
+// presented as their own.
 
 function ResultsPage() {
   const { gallery } = Route.useLoaderData();
-  // Uploaded pairs lead, bundled samples follow, so the page never looks
-  // empty before any real work has been added.
-  const uploaded = (gallery ?? [])
+  const shown = (gallery ?? [])
     .filter((g) => g.beforeUrl && g.afterUrl)
     .map((g) => ({
       label: g.label,
-      detail: "Recent work",
+      detail: g.detail || "Recent work",
       before: g.beforeUrl as string,
       after: g.afterUrl as string,
-      desc: "",
-      package: "",
+      desc: g.description ?? "",
+      package: g.packageLabel ?? "",
     }));
-  const shown = uploaded.length > 0 ? [...uploaded, ...results] : results;
 
   return (
     <div className="min-h-screen overflow-x-hidden">
@@ -168,6 +136,25 @@ function ResultsPage() {
       {/* Gallery */}
       <section className="pb-24 px-6">
         <div className="max-w-6xl mx-auto space-y-28">
+          {shown.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto max-w-xl rounded-3xl border border-border px-8 py-16 text-center"
+            >
+              <p className="font-display text-2xl font-bold">Gallery coming soon</p>
+              <p className="mt-3 text-muted-foreground">
+                Before-and-after shots from recent jobs are on their way. Get in touch and see
+                the work in person in the meantime.
+              </p>
+              <Link
+                to="/"
+                className="mt-6 inline-flex items-center gap-1.5 rounded-full border border-border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-primary/60"
+              >
+                <ArrowLeft className="h-4 w-4" /> Back home
+              </Link>
+            </motion.div>
+          )}
           {shown.map((r, i) => (
             <motion.div
               key={i}

@@ -76,7 +76,7 @@ function Sales() {
             <select
               value={months}
               onChange={(e) => setMonths(Number(e.target.value))}
-              className="rounded-lg border border-white/[0.09] bg-white/[0.03] px-3 py-2 text-[13px] font-semibold text-foreground outline-none focus:border-primary/60"
+              className="rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-3 py-2 text-[13px] font-semibold text-foreground outline-none focus:border-primary/60"
             >
               <option value={6}>Last 6 months</option>
               <option value={12}>Last 12 months</option>
@@ -87,7 +87,7 @@ function Sales() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           index={0}
           label="This month"
@@ -149,7 +149,9 @@ function Sales() {
           </div>
         </div>
 
-        <div className="mt-8 flex h-56 items-end gap-1.5">
+        {/* items-stretch: with items-end the columns size to content and the
+            bars' percentage heights collapse. */}
+        <div className="mt-8 flex h-56 items-stretch gap-1.5">
           {data.months.map((m, i) => (
             <div key={m.key} className="group relative flex flex-1 flex-col items-center gap-2">
               <div className="relative flex w-full flex-1 items-end">
@@ -172,7 +174,7 @@ function Sales() {
                   )}
                 </motion.div>
 
-                <div className="pointer-events-none absolute -top-1 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-white/[0.1] bg-[var(--card)] px-2.5 py-1.5 text-[11px] shadow-lg group-hover:block">
+                <div className="pointer-events-none absolute -top-1 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg border border-[var(--line-3)] bg-[var(--card)] px-2.5 py-1.5 text-[11px] shadow-lg group-hover:block">
                   <span className="font-semibold text-foreground">{money(m.revenue)}</span>
                   <span className="text-muted-foreground">
                     {" "}
@@ -204,7 +206,7 @@ function Sales() {
                       {s.jobs} · {money(s.revenue)}
                     </span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="h-2 overflow-hidden rounded-full bg-[var(--fill-2)]">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${(s.revenue / max) * 100}%` }}
@@ -228,7 +230,7 @@ function Sales() {
               byAddOn.map((a) => (
                 <span
                   key={a.title}
-                  className="rounded-lg bg-white/[0.05] px-2.5 py-1.5 text-[12px] text-foreground ring-1 ring-inset ring-white/[0.07]"
+                  className="rounded-lg bg-[var(--fill-2)] px-2.5 py-1.5 text-[12px] text-foreground ring-1 ring-inset ring-[var(--line-2)]"
                 >
                   {a.title}
                   <span className="tnum ml-1.5 font-semibold text-primary">{a.count}</span>
@@ -247,7 +249,7 @@ function Sales() {
               {topCustomers.map((c, i) => (
                 <div
                   key={c.name + i}
-                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-2.5"
                 >
                   <span className="tnum w-5 text-[12px] font-bold text-muted-foreground">
                     {i + 1}
@@ -264,7 +266,7 @@ function Sales() {
             </div>
           )}
 
-          <div className="mt-6 grid grid-cols-3 gap-3 border-t border-white/[0.07] pt-5">
+          <div className="mt-6 grid grid-cols-3 gap-3 border-t border-[var(--line-2)] pt-5">
             <MiniStat icon={Repeat} label="Repeat" value={`${totals.repeatCustomers}`} />
             <MiniStat icon={Truck} label="Mobile" value={`${totals.mobileShare}%`} />
             <MiniStat icon={Banknote} label="Tips" value={money(totals.tips)} />
@@ -283,9 +285,9 @@ function Sales() {
             {recent.map((r) => (
               <div
                 key={r.id}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-2.5"
               >
-                <span className="rounded-md bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                <span className="rounded-md bg-[var(--fill-2)] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                   {r.reference}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">

@@ -7,11 +7,18 @@ import {
   CalendarClock,
   CheckCircle2,
   DollarSign,
+  Sparkles,
   TrendingUp,
   Users,
 } from "lucide-react";
 
 import { getDashboard } from "@/lib/api/admin.functions";
+import { TabBar } from "@/components/admin/TabBar";
+import {
+  ChartModeToggle,
+  RevenueChart,
+  type ChartMode,
+} from "@/components/admin/RevenueChart";
 import {
   EmptyState,
   ErrorNote,
@@ -34,22 +41,78 @@ type Data = Awaited<ReturnType<typeof getDashboard>>;
 function Dashboard() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [unit, setUnit] = useState<"week" | "month">("month");
+  const [count, setCount] = useState(6);
+  const [chartMode, setChartMode] = useState<ChartMode>("bars");
 
   useEffect(() => {
     let cancelled = false;
-    getDashboard()
+    getDashboard({ data: { unit, count } })
       .then((res) => !cancelled && setData(res))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : "Failed to load."));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [unit, count]);
 
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!data) return <Spinner label="Loading dashboard…" />;
 
   const { stats, today, upcoming, months, byService } = data;
-  const peak = Math.max(1, ...months.map((m) => m.revenue));
+  const hasBooked = months.some((m) => m.booked > 0);
+
+  // Month-on-month pace. Both figures come from the server as real calendar
+  // months, never from the chart buckets — the chart can be showing weeks,
+  // and it may extend past today for future-dated work, so reading it
+  // positionally gave the wrong answer in both cases.
+  const thisMonthRevenue = stats.revenueThisMonth;
+  const lastMonthRevenue = stats.revenueLastMonth;
+  const pacePercent =
+    lastMonthRevenue > 0
+      ? Math.round((thisMonthRevenue / lastMonthRevenue) * 100)
+      : thisMonthRevenue > 0
+        ? 100
+        : 0;
+
+  // A plain-English read, chosen from what's actually true right now rather
+  // than a generic greeting.
+  const { headline, subline } = (() => {
+    if (stats.todayCount > 0) {
+      return {
+        headline: `${stats.todayCount} ${stats.todayCount === 1 ? "job" : "jobs"} on today.`,
+        subline:
+          stats.upcomingCount > 0
+            ? `${stats.upcomingCount} more booked after that, worth ${money(stats.pipeline)}.`
+            : "Nothing else booked yet this week.",
+      };
+    }
+    if (lastMonthRevenue > 0 && thisMonthRevenue > lastMonthRevenue) {
+      return {
+        headline: `You're ahead of last month by ${money(thisMonthRevenue - lastMonthRevenue)}.`,
+        subline: `${money(thisMonthRevenue)} earned so far, with ${money(stats.pipeline)} still booked in.`,
+      };
+    }
+    if (stats.upcomingCount > 0) {
+      return {
+        headline: `${stats.upcomingCount} ${stats.upcomingCount === 1 ? "job" : "jobs"} booked in.`,
+        subline: `That's ${money(stats.pipeline)} of work waiting, and ${money(stats.revenueThisMonth)} earned this month.`,
+      };
+    }
+    // Nothing upcoming — but "no jobs booked yet" would be a lie if work has
+    // already been completed, so lead with that instead.
+    if (stats.completedAllTime > 0) {
+      return {
+        headline: "Nothing booked in right now.",
+        subline: `${stats.completedAllTime} job${stats.completedAllTime === 1 ? "" : "s"} completed so far${
+          stats.aheadRevenue > 0 ? `, including ${money(stats.aheadRevenue)} dated next month` : ""
+        }.`,
+      };
+    }
+    return {
+      headline: "No jobs booked yet.",
+      subline: "Bookings from the site land here automatically, the moment someone books.",
+    };
+  })();
 
   return (
     <>
@@ -67,7 +130,54 @@ function Dashboard() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Hero row: a plain-English read on the month, and how it compares. */}
+      <div className="mb-5 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="relative overflow-hidden rounded-2xl p-6 text-primary-foreground"
+          style={{ backgroundImage: "var(--gradient-brand)" }}
+        >
+          {/* Decorative wash. `clip` not `hidden` — see styles.css. */}
+          <div className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-white/20 blur-[70px]" />
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/15 px-2.5 py-1.5 text-[11px] font-semibold backdrop-blur-sm">
+            <Sparkles className="h-3.5 w-3.5" /> This month
+          </span>
+          <p className="mt-5 max-w-md text-[22px] font-bold leading-snug tracking-tight">
+            {headline}
+          </p>
+          <p className="mt-2 max-w-md text-[13px] leading-relaxed opacity-85">{subline}</p>
+          <Link
+            to="/admin/finance"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-3.5 py-2 text-[12.5px] font-semibold backdrop-blur-sm transition hover:bg-black/30"
+          >
+            See the numbers <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        </motion.div>
+
+        <GlassCard index={1} className="flex flex-col items-center justify-center p-6">
+          <p className="self-start text-[15px] font-semibold tracking-tight text-foreground">
+            Against last month
+          </p>
+          <Gauge percent={pacePercent} />
+          <div className="mt-4 flex w-full items-center justify-between text-[11.5px]">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundImage: "var(--gradient-brand)" }}
+              />
+              This month {money(thisMonthRevenue)}
+            </span>
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <span className="h-2 w-2 rounded-full bg-[var(--fill-3)]" />
+              Last {money(lastMonthRevenue)}
+            </span>
+          </div>
+        </GlassCard>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           index={0}
           label="Today"
@@ -87,7 +197,14 @@ function Dashboard() {
           index={2}
           label="Revenue this month"
           value={money(stats.revenueThisMonth)}
-          hint="from completed jobs"
+          hint={
+            // Revenue is counted by the job's own date, so a completed job
+            // dated next month isn't "this month" — say so, rather than
+            // leaving someone staring at $0 after finishing a job.
+            stats.aheadRevenue > 0
+              ? `+ ${money(stats.aheadRevenue)} completed, dated next month`
+              : "from completed jobs"
+          }
           icon={DollarSign}
         />
         <StatTile
@@ -101,37 +218,53 @@ function Dashboard() {
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         {/* Revenue chart */}
-        <GlassCard index={4} className="p-6 lg:col-span-2">
-          <div className="flex items-center justify-between gap-3">
+        <GlassCard index={4} className="p-4 sm:p-6 lg:col-span-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[15px] font-semibold tracking-tight text-foreground">Revenue</p>
-              <p className="text-xs text-muted-foreground">Completed jobs, last 6 months</p>
+              <p className="text-xs text-muted-foreground">
+                Completed jobs, last {count} {unit === "week" ? "weeks" : "months"}
+                {hasBooked && " · dashed is booked but not done"}
+              </p>
             </div>
-            <TrendingUp className="h-4 w-4 text-primary" />
+            <div className="flex flex-wrap items-center gap-2">
+              <TabBar
+                layoutId="dash-unit"
+                size="sm"
+                value={unit}
+                onChange={(u) => {
+                  setUnit(u);
+                  // A sensible span for each: 8 weeks or 6 months.
+                  setCount(u === "week" ? 8 : 6);
+                }}
+                tabs={[
+                  { value: "week" as const, label: "Weekly" },
+                  { value: "month" as const, label: "Monthly" },
+                ]}
+              />
+              <ChartModeToggle mode={chartMode} onChange={setChartMode} />
+            </div>
           </div>
 
-          <div className="mt-8 flex h-52 items-end gap-3">
-            {months.map((m, i) => (
-              <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: `${(m.revenue / peak) * 100}%`, opacity: 1 }}
-                  transition={{ delay: 0.15 + i * 0.07, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                  className="relative w-full rounded-t-xl"
-                  style={{
-                    backgroundImage: "var(--gradient-brand)",
-                    minHeight: m.revenue > 0 ? 6 : 2,
-                    opacity: m.revenue > 0 ? 1 : 0.25,
-                  }}
-                  title={`${money(m.revenue)} · ${m.jobs} job(s)`}
-                />
-                <span className="text-[11px] font-medium text-muted-foreground">{m.label}</span>
-              </div>
-            ))}
+          <div className="mt-7">
+            <RevenueChart
+              data={months.map((m) => ({
+                key: m.month,
+                label: m.label,
+                revenue: m.revenue,
+                booked: m.booked,
+                jobs: m.jobs,
+                bookedJobs: m.bookedJobs,
+                start: m.start,
+                end: m.end,
+              }))}
+              mode={chartMode}
+            />
           </div>
-          {peak === 1 && (
+
+          {months.every((m) => m.revenue === 0) && (
             <p className="mt-4 text-center text-xs text-muted-foreground">
-              No completed jobs yet — mark an appointment complete and it'll show up here.
+              No completed jobs in this range — mark an appointment complete and it'll show up here.
             </p>
           )}
         </GlassCard>
@@ -183,7 +316,7 @@ function Dashboard() {
                   key={b.id}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0, transition: { delay: i * 0.06 } }}
-                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-2.5"
                 >
                   <span className="text-[13px] font-bold text-primary">
                     {time12h(b.startTime)}
@@ -220,7 +353,7 @@ function Dashboard() {
                   key={b.id}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0, transition: { delay: i * 0.05 } }}
-                  className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5"
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-2.5"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">
@@ -240,5 +373,62 @@ function Dashboard() {
         </GlassCard>
       </div>
     </>
+  );
+}
+
+
+/**
+ * Semicircular progress arc, as in the reference dashboard.
+ *
+ * Drawn with two stroked SVG arcs rather than a chart library: the track, and
+ * the value on top, revealed with stroke-dashoffset. Capped at 100% so a
+ * blowout month cannot draw past the end of the arc.
+ */
+function Gauge({ percent }: { percent: number }) {
+  const clamped = Math.max(0, Math.min(100, percent));
+  // Semicircle of radius 80, so the drawn length is pi * r.
+  const length = Math.PI * 80;
+  const offset = length * (1 - clamped / 100);
+
+  return (
+    <div className="relative mt-4 w-full max-w-[220px]">
+      <svg viewBox="0 0 200 110" className="w-full">
+        <defs>
+          <linearGradient id="gaugeFill" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="var(--primary)" />
+            <stop offset="100%" stopColor="var(--primary-glow)" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M 20 100 A 80 80 0 0 1 180 100"
+          fill="none"
+          stroke="var(--fill-3)"
+          strokeWidth="16"
+          strokeLinecap="round"
+        />
+        <motion.path
+          d="M 20 100 A 80 80 0 0 1 180 100"
+          fill="none"
+          stroke="url(#gaugeFill)"
+          strokeWidth="16"
+          strokeLinecap="round"
+          strokeDasharray={length}
+          initial={{ strokeDashoffset: length }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+        />
+      </svg>
+      <div className="absolute inset-x-0 bottom-0 text-center">
+        <p className="text-[11px] font-medium text-muted-foreground">of last month</p>
+        <motion.p
+          key={clamped}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="tnum text-[26px] font-bold leading-none tracking-tight text-foreground"
+        >
+          {percent}%
+        </motion.p>
+      </div>
+    </div>
   );
 }

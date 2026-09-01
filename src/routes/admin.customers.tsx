@@ -258,13 +258,13 @@ function Customers() {
         {open && (
           <>
             <div className="mb-6 grid grid-cols-2 gap-3">
-              <div className="rounded-xl bg-white/[0.04] px-4 py-3 ring-1 ring-inset ring-white/[0.06]">
+              <div className="rounded-xl bg-[var(--fill-2)] px-4 py-3 ring-1 ring-inset ring-[var(--line-1)]">
                 <p className="text-[11px] text-muted-foreground">Lifetime value</p>
                 <p className="tnum mt-0.5 text-xl font-bold text-primary">
                   {money(open.lifetimeValue)}
                 </p>
               </div>
-              <div className="rounded-xl bg-white/[0.04] px-4 py-3 ring-1 ring-inset ring-white/[0.06]">
+              <div className="rounded-xl bg-[var(--fill-2)] px-4 py-3 ring-1 ring-inset ring-[var(--line-1)]">
                 <p className="text-[11px] text-muted-foreground">Bookings</p>
                 <p className="tnum mt-0.5 text-xl font-bold text-foreground">{open.bookingCount}</p>
               </div>
@@ -296,7 +296,7 @@ function Customers() {
                   {history.map((b) => (
                     <div
                       key={b.id}
-                      className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-3"
+                      className="rounded-xl border border-[var(--line-1)] bg-[var(--fill-1)] px-3.5 py-3"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[13px] font-semibold text-foreground">
@@ -334,7 +334,7 @@ function Customers() {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              className="max-h-[88vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
             >
               <div className="flex items-start justify-between">
                 <h2 className="text-lg font-bold tracking-tight text-foreground">

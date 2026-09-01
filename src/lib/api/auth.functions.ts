@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 // Everything server-only is imported *inside* the handlers so it is
-// tree-shaken out of the client bundle. See src/lib/api/example.functions.ts.
+// tree-shaken out of the client bundle. See booking.functions.ts for the same pattern on the public side.
 
 const emailSchema = z.string().email().max(255);
 

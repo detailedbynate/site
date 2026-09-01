@@ -23,6 +23,7 @@ import { Route as AdminAutomationRouteImport } from './routes/admin.automation'
 import { Route as AdminCalendarRouteImport } from './routes/admin.calendar'
 import { Route as AdminCouponsRouteImport } from './routes/admin.coupons'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
+import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminFormFieldsRouteImport } from './routes/admin.form-fields'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin.integrations'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
@@ -32,6 +33,7 @@ import { Route as AdminSalesRouteImport } from './routes/admin.sales'
 import { Route as AdminSeoRouteImport } from './routes/admin.seo'
 import { Route as AdminServicesRouteImport } from './routes/admin.services'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminTestimonialsRouteImport } from './routes/admin.testimonials'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -103,6 +105,11 @@ const AdminCustomersRoute = AdminCustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminFinanceRoute = AdminFinanceRouteImport.update({
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFormFieldsRoute = AdminFormFieldsRouteImport.update({
   id: '/form-fields',
   path: '/form-fields',
@@ -148,6 +155,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTestimonialsRoute = AdminTestimonialsRouteImport.update({
+  id: '/testimonials',
+  path: '/testimonials',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -163,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/admin/calendar': typeof AdminCalendarRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/form-fields': typeof AdminFormFieldsRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -172,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/admin/seo': typeof AdminSeoRoute
   '/admin/services': typeof AdminServicesRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRoutesByTo {
@@ -187,6 +201,7 @@ export interface FileRoutesByTo {
   '/admin/calendar': typeof AdminCalendarRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/form-fields': typeof AdminFormFieldsRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -196,6 +211,7 @@ export interface FileRoutesByTo {
   '/admin/seo': typeof AdminSeoRoute
   '/admin/services': typeof AdminServicesRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin': typeof AdminIndexRoute
 }
 export interface FileRoutesById {
@@ -213,6 +229,7 @@ export interface FileRoutesById {
   '/admin/calendar': typeof AdminCalendarRoute
   '/admin/coupons': typeof AdminCouponsRoute
   '/admin/customers': typeof AdminCustomersRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/form-fields': typeof AdminFormFieldsRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
@@ -222,6 +239,7 @@ export interface FileRoutesById {
   '/admin/seo': typeof AdminSeoRoute
   '/admin/services': typeof AdminServicesRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/testimonials': typeof AdminTestimonialsRoute
   '/admin/': typeof AdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -240,6 +258,7 @@ export interface FileRouteTypes {
     | '/admin/calendar'
     | '/admin/coupons'
     | '/admin/customers'
+    | '/admin/finance'
     | '/admin/form-fields'
     | '/admin/integrations'
     | '/admin/locations'
@@ -249,6 +268,7 @@ export interface FileRouteTypes {
     | '/admin/seo'
     | '/admin/services'
     | '/admin/settings'
+    | '/admin/testimonials'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -264,6 +284,7 @@ export interface FileRouteTypes {
     | '/admin/calendar'
     | '/admin/coupons'
     | '/admin/customers'
+    | '/admin/finance'
     | '/admin/form-fields'
     | '/admin/integrations'
     | '/admin/locations'
@@ -273,6 +294,7 @@ export interface FileRouteTypes {
     | '/admin/seo'
     | '/admin/services'
     | '/admin/settings'
+    | '/admin/testimonials'
     | '/admin'
   id:
     | '__root__'
@@ -289,6 +311,7 @@ export interface FileRouteTypes {
     | '/admin/calendar'
     | '/admin/coupons'
     | '/admin/customers'
+    | '/admin/finance'
     | '/admin/form-fields'
     | '/admin/integrations'
     | '/admin/locations'
@@ -298,6 +321,7 @@ export interface FileRouteTypes {
     | '/admin/seo'
     | '/admin/services'
     | '/admin/settings'
+    | '/admin/testimonials'
     | '/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -409,6 +433,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCustomersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/finance': {
+      id: '/admin/finance'
+      path: '/finance'
+      fullPath: '/admin/finance'
+      preLoaderRoute: typeof AdminFinanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/form-fields': {
       id: '/admin/form-fields'
       path: '/form-fields'
@@ -472,6 +503,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/testimonials': {
+      id: '/admin/testimonials'
+      path: '/testimonials'
+      fullPath: '/admin/testimonials'
+      preLoaderRoute: typeof AdminTestimonialsRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
@@ -484,6 +522,7 @@ interface AdminRouteChildren {
   AdminCalendarRoute: typeof AdminCalendarRoute
   AdminCouponsRoute: typeof AdminCouponsRoute
   AdminCustomersRoute: typeof AdminCustomersRoute
+  AdminFinanceRoute: typeof AdminFinanceRoute
   AdminFormFieldsRoute: typeof AdminFormFieldsRoute
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
   AdminLocationsRoute: typeof AdminLocationsRoute
@@ -493,6 +532,7 @@ interface AdminRouteChildren {
   AdminSeoRoute: typeof AdminSeoRoute
   AdminServicesRoute: typeof AdminServicesRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminTestimonialsRoute: typeof AdminTestimonialsRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -505,6 +545,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCalendarRoute: AdminCalendarRoute,
   AdminCouponsRoute: AdminCouponsRoute,
   AdminCustomersRoute: AdminCustomersRoute,
+  AdminFinanceRoute: AdminFinanceRoute,
   AdminFormFieldsRoute: AdminFormFieldsRoute,
   AdminIntegrationsRoute: AdminIntegrationsRoute,
   AdminLocationsRoute: AdminLocationsRoute,
@@ -514,6 +555,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSeoRoute: AdminSeoRoute,
   AdminServicesRoute: AdminServicesRoute,
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminTestimonialsRoute: AdminTestimonialsRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

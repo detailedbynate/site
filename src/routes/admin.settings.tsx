@@ -7,6 +7,7 @@ import { getAdminSettings, saveSettings } from "@/lib/api/admin.functions";
 import { TeamCard } from "@/components/admin/TeamCard";
 import { ScheduleCard } from "@/components/admin/ScheduleCard";
 import { changePassword, getMe, updateProfile } from "@/lib/api/auth.functions";
+import { AvatarPicker } from "@/components/admin/AvatarPicker";
 import {
   Button,
   ErrorNote,
@@ -148,16 +149,21 @@ function SettingsPage() {
 function AccountCard() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [me, setMe] = useState<{ id: string; avatarPhotoId?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const loadMe = async () => {
+    const r = await getMe();
+    if (r.user) {
+      setName(r.user.name);
+      setEmail(r.user.email);
+      setMe({ id: r.user.id, avatarPhotoId: r.user.avatarPhotoId });
+    }
+  };
+
   useEffect(() => {
-    getMe().then((r) => {
-      if (r.user) {
-        setName(r.user.name);
-        setEmail(r.user.email);
-      }
-    });
+    void loadMe();
   }, []);
 
   const save = async () => {
@@ -181,6 +187,17 @@ function AccountCard() {
       </div>
 
       <div className="mt-5 space-y-4">
+        {me && (
+          <div className="rounded-lg border border-[var(--line-2)] bg-[var(--fill-1)] px-3.5 py-3">
+            <AvatarPicker
+              kind="user"
+              id={me.id}
+              name={name}
+              photoId={me.avatarPhotoId}
+              onChange={loadMe}
+            />
+          </div>
+        )}
         <Field label="Name">
           <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>

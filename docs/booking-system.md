@@ -68,13 +68,23 @@ In `.env`:
 
 Explicitly deferred scope, not oversights — flagged in code comments too:
 
-- **Auth**: shared password on every request is fine for local testing, not for a public domain. Replace with real session-based auth (e.g. a proper login endpoint setting an httpOnly cookie, or a full auth provider) before deploying `/admin` publicly.
+- **Auth**: real now — scrypt-hashed passwords, server-side revocable sessions in an HTTP-only cookie, `requireUser()`/`requireRole()` at the top of every admin server function. The remaining gap is rate limiting at the proxy; the login throttle is in-process and resets on restart.
 - **Rate limiting**: `createBooking` has no rate limit — add one before this is public, to prevent spam bookings / Calendar-quota exhaustion.
 - **Verification**: consider requiring email verification or a deposit before a booking is considered fully confirmed.
 
-## Data storage caveat
+## Data storage
 
-`src/lib/db.server.ts` writes to `data/store.json` on local disk (gitignored). This requires a persistent, writable filesystem — works on a VPS/Render/Railway/Fly.io, **will not persist** on Vercel/Cloudflare Pages (serverless, ephemeral/read-only FS). If deploying there, swap this module for a real database (Postgres via Neon/Supabase, Turso, etc.) — every exported function in the file is an isolated async CRUD call, so callers elsewhere shouldn't need to change.
+`src/lib/db.server.ts` is a SQLite database at `data/app.db`, using **`node:sqlite`** — the engine bundled with Node (22.13+). No native modules to compile, no database server to run, and no extra dependency; the same reasoning that made auth use `scrypt` from `node:crypto` instead of bcrypt.
+
+Why SQLite rather than the JSON file it replaced: the JSON store re-read and re-parsed the *entire* file on every single call, so computing availability across the 3-week booking window cost ~21 whole-file reads. Those are now index seeks on `bookings(date, status)`. It also brings real transactions (a failed multi-step write rolls back instead of leaving half-applied state) and a `UNIQUE` constraint on user email and booking reference, enforced by the database rather than by remembering to check first.
+
+Writes are wrapped in `tx()`. `node:sqlite` is synchronous and Node is single-threaded, so nothing can interleave inside a transaction — which is why the old hand-rolled write-queue mutex is gone. Don't `await` inside `tx()`; that would break the guarantee.
+
+**Migration is automatic.** On first start, an existing `data/store.json` is imported in one transaction, then renamed to `store.json.migrated` with a copy kept at `store.json.backup`. The import only runs into a database with no users, clients or bookings, so a stale export can never overwrite live data.
+
+**This needs a persistent, writable disk.** Works on a VPS/Render/Railway/Fly.io (mount a volume at `data/`); **will not work** on Vercel/Cloudflare Pages, where the filesystem is ephemeral or read-only and both the database and `data/uploads/` would be lost on every deploy. The Nitro preset is pinned to `node-server` in `vite.config.ts` for this reason — the scaffold defaulted to `cloudflare-module`, which would have failed at runtime rather than at build time.
+
+If you ever outgrow it, every exported function is still an isolated async call, so swapping in Postgres is contained to this one file.
 
 ## Known gaps / good next iterations
 

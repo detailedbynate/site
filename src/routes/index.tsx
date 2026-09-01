@@ -1,18 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, useInView, useMotionValue, useTransform, animate } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Star, ChevronDown, Calendar, Phone, MapPin, Mail, ArrowRight, ArrowUpRight } from "lucide-react";
+import { Sparkles, Star, ChevronDown, Calendar, Phone, MapPin, Mail, ArrowRight, ArrowUpRight, Lock } from "lucide-react";
 import heroCar from "@/assets/hero-car.jpg";
 import serviceDiamond from "@/assets/service-diamond.jpg";
 import serviceGold from "@/assets/service-gold.jpg";
 import serviceSilver from "@/assets/service-silver.jpg";
-import before1 from "@/assets/before-1.jpg";
-import after1 from "@/assets/after-1.jpg";
-import before2 from "@/assets/before-2.jpg";
-import after2 from "@/assets/after-2.jpg";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { useBookingModal } from "@/components/booking/BookingModal";
 import { getCatalog, getPublicGallery } from "@/lib/api/booking.functions";
+import {
+  getHeroImage,
+  getPublicFaqs,
+  getPublicTestimonials,
+} from "@/lib/api/content.functions";
 import type { ServiceId } from "@/lib/services";
 
 export const Route = createFileRoute("/")({
@@ -26,10 +27,30 @@ export const Route = createFileRoute("/")({
   // number and nothing for a crawler to read wrong.
   loader: async () => {
     try {
-      const [catalog, gallery] = await Promise.all([getCatalog(), getPublicGallery()]);
-      return { services: catalog.services, business: catalog.business, gallery: gallery.pairs };
+      const [catalog, gallery, reviews, faq, hero] = await Promise.all([
+        getCatalog(),
+        getPublicGallery(),
+        getPublicTestimonials(),
+        getPublicFaqs(),
+        getHeroImage(),
+      ]);
+      return {
+        services: catalog.services,
+        business: catalog.business,
+        gallery: gallery.pairs,
+        reviews: reviews.testimonials,
+        faqs: faq.faqs,
+        heroUrl: hero.url,
+      };
     } catch {
-      return { services: null, business: null, gallery: [] };
+      return {
+        services: null,
+        business: null,
+        gallery: [],
+        reviews: [],
+        faqs: [],
+        heroUrl: null,
+      };
     }
   },
   component: Index,
@@ -93,7 +114,7 @@ const serviceCards = [
   },
 ];
 
-const reviews = [
+const fallbackReviews = [
   { name: "Marcus T.", car: "BMW M4 Competition", rating: 5, text: "Nate transformed my M4. Paint correction was flawless — looks better than the day I drove it off the lot. Genuine craftsman." },
   { name: "Sofia R.", car: "Tesla Model 3", rating: 5, text: "Booked the ceramic coating package. Water beads off like magic and the interior smells brand new. Worth every dollar." },
   { name: "Devon K.", car: "Ford F-150 Raptor", rating: 5, text: "Truck was a mud-caked disaster after a weekend in Moab. Came back showroom clean inside and out. Insane attention to detail." },
@@ -102,7 +123,7 @@ const reviews = [
   { name: "Riley M.", car: "Jeep Wrangler", rating: 5, text: "Got the full detail before selling — sold it for $2k over asking. Buyers couldn't believe the condition. Thanks Nate." },
 ];
 
-const faqs = [
+const fallbackFaqs = [
   { q: "How long does a full detail take?", a: "A standard full detail runs 3–5 hours depending on vehicle size and condition. Ceramic coatings require an additional cure day." },
   { q: "Do you come to me?", a: "Yes — mobile service is available throughout the area. I bring water, power, and every product needed." },
   { q: "What's included in the ceramic coating package?", a: "Full decontamination wash, clay bar, single-stage paint correction, panel wipe, and a professional 9H ceramic coating with warranty." },
@@ -113,19 +134,27 @@ const faqs = [
 function Index() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const booking = useBookingModal();
-  const { services: liveServices, business, gallery } = Route.useLoaderData();
+  const {
+    services: liveServices,
+    business,
+    gallery,
+    reviews: liveReviews,
+    faqs: liveFaqs,
+    heroUrl,
+  } = Route.useLoaderData();
+  // Both editable in the admin; the bundled versions are only a fallback for
+  // a fresh install whose tables somehow came back empty.
+  const faqs = liveFaqs?.length ? liveFaqs : fallbackFaqs;
+  // Editable from /admin/testimonials. The bundled set is only a fallback for
+  // a brand-new install whose table somehow came back empty.
+  const reviews = liveReviews?.length ? liveReviews : fallbackReviews;
   // Uploaded pairs (Admin → SEO & branding) replace the bundled samples once
   // there are any, so the homepage shows real work rather than stock shots.
-  const samplePairs = [
-    { id: "sample-1", label: "Paint correction", beforeUrl: before1, afterUrl: after1 },
-    { id: "sample-2", label: "Interior reset", beforeUrl: before2, afterUrl: after2 },
-  ];
-  // Uploaded pairs lead; samples top the row up to two so the grid is never
-  // left with a single lonely tile.
-  const shownPairs = [
-    ...(gallery ?? []).filter((g) => g.beforeUrl && g.afterUrl),
-    ...samplePairs,
-  ].slice(0, 2);
+  // Only the shop's own uploaded work (Admin -> SEO & branding). Bundled
+  // stock shots used to fill this row, which meant the homepage showed
+  // photos of cars Nate never touched. The whole section hides when there
+  // is nothing real to show.
+  const shownPairs = (gallery ?? []).filter((g) => g.beforeUrl && g.afterUrl).slice(0, 2);
   // Contact details are editable in Settings, so they're read rather than
   // hardcoded — otherwise changing them there would silently do nothing.
   const phone = business?.phone ?? "(555) 123-4567";
@@ -183,7 +212,7 @@ function Index() {
       <section id="top" className="relative min-h-screen flex items-center pt-24 pb-16">
         <div className="absolute inset-0 -z-10">
           <motion.img
-            src={heroCar}
+            src={heroUrl ?? heroCar}
             alt="Freshly detailed glossy black sports car under studio lighting"
             width={1920}
             height={1080}
@@ -464,7 +493,9 @@ function Index() {
         </div>
       </section>
 
-      {/* Before & After preview */}
+      {/* Before & After preview. Hidden entirely until there's real work to
+          show — an empty grid or stock photos would both be worse. */}
+      {shownPairs.length > 0 && (
       <section id="results" className="py-24 relative">
         <div className="max-w-7xl mx-auto px-6">
           <motion.div
@@ -497,6 +528,7 @@ function Index() {
           </div>
         </div>
       </section>
+      )}
 
 
       {/* FAQ */}
@@ -552,7 +584,17 @@ function Index() {
       <footer className="border-t border-border py-10 mt-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <p>© {new Date().getFullYear()} Detailed by Nate. All rights reserved.</p>
-          <p>Crafted with obsession in the {area}.</p>
+          <div className="flex items-center gap-4">
+            <p>Crafted with obsession in the {area}.</p>
+            {/* Owner's way in. Deliberately quiet — customers have no use for
+                it, and /admin is noindex and server-guarded regardless. */}
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold transition-colors hover:border-primary/60 hover:text-foreground"
+            >
+              <Lock className="w-3 h-3" /> Staff login
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

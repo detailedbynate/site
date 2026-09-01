@@ -165,7 +165,7 @@ export function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.98, y: 8 }}
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/[0.08] bg-[var(--card)] p-6"
+              className="max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-[var(--line-2)] bg-[var(--card)] p-6"
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -193,7 +193,7 @@ export function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
                 <button
                   type="button"
                   onClick={() => inputRef.current?.click()}
-                  className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-white/[0.14] bg-white/[0.02] px-6 py-8 transition hover:border-primary/40 hover:bg-white/[0.04]"
+                  className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--line-3)] bg-[var(--fill-1)] px-6 py-8 transition hover:border-primary/40 hover:bg-[var(--fill-2)]"
                 >
                   <Upload className="h-5 w-5 text-primary" />
                   <span className="text-[13px] font-semibold text-foreground">
@@ -254,7 +254,7 @@ export function CsvImport({ onDone }: { onDone: () => Promise<void> }) {
                     ))}
                   </div>
 
-                  <div className="mt-4 rounded-xl bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.06]">
+                  <div className="mt-4 rounded-xl bg-[var(--fill-1)] p-3 ring-1 ring-inset ring-[var(--line-1)]">
                     <p className="text-[12px] font-semibold text-foreground">
                       {valid.length} ready to import
                       {skipped > 0 && (

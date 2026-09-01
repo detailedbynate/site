@@ -132,6 +132,9 @@ export function toPublicUser(user: User) {
     role: user.role,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt,
+    // Just the id — the image itself is fetched separately so a session
+    // check doesn't have to carry a base64 payload on every request.
+    avatarPhotoId: user.avatarPhotoId,
   };
 }
 

@@ -8,11 +8,16 @@ import {
   ChevronsLeft,
   CreditCard,
   FileInput,
+  ExternalLink,
   LayoutDashboard,
   LogOut,
   MapPin,
   Menu,
+  MessageSquareQuote,
+  Moon,
+  Sun,
   Package,
+  PiggyBank,
   Plug,
   Receipt,
   Search,
@@ -26,6 +31,9 @@ import {
 } from "lucide-react";
 
 import { getMe, logout } from "@/lib/api/auth.functions";
+import { useAdminTheme } from "@/components/admin/theme";
+import { BottomNav } from "@/components/admin/BottomNav";
+import { getAvatars } from "@/lib/api/content.functions";
 import type { PublicUser } from "@/lib/auth.server";
 
 export const Route = createFileRoute("/admin")({
@@ -46,18 +54,25 @@ type NavItem = {
   soon?: boolean;
 };
 
-// Mirrors the reference layout the owner asked for. Items marked `soon`
-// render a "planned" page rather than fake UI that pretends to work.
+// Mirrors the reference layout the owner asked for. `soon` renders a
+// "planned" page rather than fake UI that pretends to work — every section
+// below is now backed by real data, so nothing carries the flag today.
 const NAV: { heading?: string; items: NavItem[] }[] = [
   {
     items: [
       { to: "/admin", label: "Dashboard", icon: LayoutDashboard },
       { to: "/admin/calendar", label: "Calendar", icon: CalendarRange },
       { to: "/admin/appointments", label: "Appointments", icon: CalendarDays },
+      { to: "/admin/customers", label: "Customers", icon: Users },
+    ],
+  },
+  {
+    heading: "Money",
+    items: [
+      { to: "/admin/finance", label: "Finance", icon: PiggyBank },
       { to: "/admin/sales", label: "Sales", icon: TrendingUp },
       { to: "/admin/orders", label: "Orders", icon: Receipt },
-      { to: "/admin/payments", label: "Payments", icon: CreditCard, soon: true },
-      { to: "/admin/customers", label: "Customers", icon: Users },
+      { to: "/admin/payments", label: "Payments", icon: CreditCard },
     ],
   },
   {
@@ -66,22 +81,30 @@ const NAV: { heading?: string; items: NavItem[] }[] = [
       { to: "/admin/services", label: "Services", icon: Package },
       { to: "/admin/addons", label: "Add-ons", icon: Sparkles },
       { to: "/admin/coupons", label: "Coupons", icon: Tag },
-      { to: "/admin/agents", label: "Agents", icon: Wrench, soon: true },
-      { to: "/admin/locations", label: "Locations", icon: MapPin, soon: true },
-      { to: "/admin/assets", label: "Assets", icon: Blocks, soon: true },
+      { to: "/admin/agents", label: "Agents", icon: Wrench },
+      { to: "/admin/locations", label: "Locations", icon: MapPin },
+      { to: "/admin/assets", label: "Assets", icon: Blocks },
     ],
   },
   {
     heading: "Settings",
     items: [
       { to: "/admin/settings", label: "Settings", icon: Settings },
-      { to: "/admin/automation", label: "Automation", icon: Workflow, soon: true },
+      { to: "/admin/automation", label: "Automation", icon: Workflow },
       { to: "/admin/integrations", label: "Integrations", icon: Plug },
       { to: "/admin/seo", label: "SEO & branding", icon: Search },
+      { to: "/admin/testimonials", label: "Reviews & FAQ", icon: MessageSquareQuote },
       { to: "/admin/form-fields", label: "Form Fields", icon: FileInput },
     ],
   },
 ];
+
+/** "MONDAY, MARCH 24" — the reference layout's date strip. */
+function todayLabel(): string {
+  return new Date()
+    .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    .toUpperCase();
+}
 
 function AdminLayout() {
   const navigate = useNavigate();
@@ -90,6 +113,8 @@ function AdminLayout() {
   const [checked, setChecked] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const { theme, toggle, themeRef } = useAdminTheme();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Client-side guard. The real enforcement is server-side — every admin
   // server function calls requireUser() — so this is purely so an
@@ -114,8 +139,49 @@ function AdminLayout() {
     };
   }, [navigate]);
 
+  // Their profile picture, if they have set one. Fetched separately so the
+  // session check stays a small response.
+  useEffect(() => {
+    const id = user?.avatarPhotoId;
+    if (!id) {
+      setAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    getAvatars({ data: { photoIds: [id] } })
+      .then((r) => !cancelled && setAvatarUrl(r.avatars[id] ?? null))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.avatarPhotoId]);
+
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setMobileOpen(false), [pathname]);
+
+  /**
+   * Select a number field's contents when it gains focus.
+   *
+   * Every numeric input is controlled and shows "0" when empty. Clicking to
+   * the LEFT of that zero and typing 5 produced "50", not 5 — so you had to
+   * clear it by hand or nudge with the arrow keys. Selecting on focus makes
+   * the first keystroke replace the value, which is what everyone expects.
+   *
+   * Done once here by delegation rather than on ~30 individual inputs, so it
+   * also covers any number field added later. `focusin` because `focus`
+   * doesn't bubble. select() only changes the selection, never the value, so
+   * React's controlled state stays in sync.
+   */
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el instanceof HTMLInputElement && el.type === "number" && !el.readOnly) {
+        el.select();
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
 
   const signOut = async () => {
     await logout().catch(() => undefined);
@@ -155,6 +221,72 @@ function AdminLayout() {
         )}
       </div>
 
+      {/* Greeting card. Gives the sidebar a human anchor and is the natural
+          home for the theme switch, the way the reference layout does it. */}
+      {!collapsed && (
+        <div className="mb-4 rounded-2xl bg-[var(--fill-2)] p-3.5 ring-1 ring-inset ring-[var(--line-1)]">
+          <div className="flex items-start justify-between gap-2">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-inset ring-[var(--line-2)]"
+              />
+            ) : (
+              <span
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[14px] font-bold text-primary-foreground"
+                style={{ backgroundImage: "var(--gradient-brand)" }}
+              >
+                {user?.name?.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                title={theme === "dark" ? "Light mode" : "Dark mode"}
+                className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-lg text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={theme}
+                    initial={{ y: 12, opacity: 0, rotate: -35 }}
+                    animate={{ y: 0, opacity: 1, rotate: 0 }}
+                    exit={{ y: -12, opacity: 0, rotate: 35 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute"
+                  >
+                    {theme === "dark" ? (
+                      <Moon className="h-[15px] w-[15px]" />
+                    ) : (
+                      <Sun className="h-[15px] w-[15px]" />
+                    )}
+                  </motion.span>
+                </AnimatePresence>
+              </button>
+              <button
+                type="button"
+                onClick={signOut}
+                aria-label="Sign out"
+                title="Sign out"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+              >
+                <LogOut className="h-[15px] w-[15px]" />
+              </button>
+            </div>
+          </div>
+          <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            {todayLabel()}
+          </p>
+          <p className="mt-0.5 text-[17px] font-bold leading-tight tracking-tight text-foreground">
+            Welcome back,
+            <br />
+            {(user?.name ?? "").split(" ")[0]}!
+          </p>
+        </div>
+      )}
+
       <nav className="-mr-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
       {NAV.map((group, gi) => (
         <div key={gi} className="mb-1">
@@ -181,7 +313,7 @@ function AdminLayout() {
                   className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-colors ${
                     active
                       ? "text-foreground"
-                      : "text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                      : "text-muted-foreground hover:bg-[var(--fill-2)] hover:text-foreground"
                   } ${collapsed ? "justify-center" : ""}`}
                 >
                   {/* A tinted panel plus a left rail reads as selected without
@@ -190,7 +322,7 @@ function AdminLayout() {
                     <motion.span
                       layoutId="admin-nav-active"
                       transition={{ type: "spring", stiffness: 420, damping: 36 }}
-                      className="absolute inset-0 -z-10 rounded-xl bg-white/[0.07] ring-1 ring-inset ring-white/[0.09]"
+                      className="absolute inset-0 -z-10 rounded-xl bg-[var(--fill-3)] ring-1 ring-inset ring-[var(--line-2)]"
                     />
                   )}
                   {active && !collapsed && (
@@ -207,7 +339,7 @@ function AdminLayout() {
                   {!collapsed && <span className="truncate">{item.label}</span>}
                   {!collapsed && item.soon && (
                     <span
-                      className="ml-auto shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80"
+                      className="ml-auto shrink-0 rounded-md bg-[var(--fill-2)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/80"
                       title="Planned - not built yet"
                     >
                       Soon
@@ -223,56 +355,90 @@ function AdminLayout() {
       </nav>
 
       <div className="shrink-0 pt-3">
-        <div className={`rounded-xl bg-white/[0.04] p-3 ring-1 ring-inset ring-white/[0.06] ${collapsed ? "px-2" : ""}`}>
-          {!collapsed && (
-            <div className="flex items-center gap-2.5">
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-bold text-primary-foreground"
-                style={{ backgroundImage: "var(--gradient-brand)" }}
-              >
-                {user?.name?.slice(0, 1).toUpperCase()}
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-semibold text-foreground">{user?.name}</p>
-                <p className="truncate text-[11px] capitalize text-muted-foreground">{user?.role}</p>
-              </div>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={signOut}
-            className={`mt-2 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive ${
-              collapsed ? "justify-center" : ""
-            }`}
+        {collapsed ? (
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={toggle}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              className="flex w-full items-center justify-center rounded-xl px-2.5 py-2 text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground"
+            >
+              {theme === "dark" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={signOut}
+              aria-label="Sign out"
+              className="flex w-full items-center justify-center rounded-xl px-2.5 py-2 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <Link
+            to="/"
+            className="group relative flex items-center gap-2.5 overflow-hidden rounded-2xl px-3.5 py-3 text-primary-foreground transition-opacity hover:opacity-95"
+            style={{ backgroundImage: "var(--gradient-brand)" }}
           >
-            <LogOut className="h-3.5 w-3.5" />
-            {!collapsed && "Sign out"}
-          </button>
-        </div>
+            <ExternalLink className="h-4 w-4 shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-[12.5px] font-bold leading-tight">View live site</span>
+              <span className="block text-[10.5px] opacity-80">See what customers see</span>
+            </span>
+          </Link>
+        )}
       </div>
     </div>
   );
 
   return (
-    <div className="admin-theme relative flex min-h-screen">
-      {/* One faint accent wash, top-left only - enough to feel lit, quiet
-          enough to read a dense table over. */}
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute -left-40 -top-64 h-[560px] w-[560px] rounded-full bg-primary/[0.07] blur-[150px]" />
+    <div ref={themeRef} className="admin-theme relative flex min-h-screen">
+      {/*
+        Ambient background. Three very low-opacity washes that drift slowly on
+        different periods, so the ground is never quite static but never
+        distracting either — a dashboard gets read for minutes at a time.
+
+        Kept behind everything and non-interactive. The whole layer is hidden
+        from anyone who prefers reduced motion (see `.ambient` in styles.css),
+        which leaves the flat background rather than a jittering one.
+      */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="admin-ambient-base absolute inset-0" />
+        <motion.div
+          aria-hidden
+          className="ambient absolute -left-48 -top-72 h-[620px] w-[620px] rounded-full blur-[150px]"
+          style={{ background: "var(--ambient-1)" }}
+          animate={{ x: [0, 60, 0], y: [0, 40, 0], scale: [1, 1.08, 1] }}
+          transition={{ duration: 34, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          aria-hidden
+          className="ambient absolute -right-56 top-1/4 h-[560px] w-[560px] rounded-full blur-[160px]"
+          style={{ background: "var(--ambient-2)" }}
+          animate={{ x: [0, -50, 0], y: [0, 60, 0], scale: [1, 1.12, 1] }}
+          transition={{ duration: 42, repeat: Infinity, ease: "easeInOut", delay: 3 }}
+        />
+        <motion.div
+          aria-hidden
+          className="ambient absolute -bottom-72 left-1/3 h-[600px] w-[600px] rounded-full blur-[170px]"
+          style={{ background: "var(--ambient-3)" }}
+          animate={{ x: [0, 40, 0], y: [0, -40, 0], scale: [1, 1.06, 1] }}
+          transition={{ duration: 50, repeat: Infinity, ease: "easeInOut", delay: 6 }}
+        />
       </div>
 
       {/* Desktop sidebar */}
       <motion.aside
         animate={{ width: collapsed ? 84 : 260 }}
         transition={{ type: "spring", stiffness: 260, damping: 30 }}
-        className="sticky top-0 z-30 hidden h-screen shrink-0 border-r border-white/[0.06] bg-white/[0.02] backdrop-blur-2xl lg:block"
+        className="admin-panel sticky top-0 z-30 hidden h-screen shrink-0 border-r border-[var(--line-1)] bg-[var(--fill-1)] backdrop-blur-2xl lg:block"
       >
         {sidebar}
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="absolute right-2 top-4 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/[0.08] hover:text-foreground lg:flex"
+          className="absolute right-2 top-4 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground lg:flex"
         >
           <motion.span animate={{ rotate: collapsed ? 180 : 0 }}>
             <ChevronsLeft className="h-3.5 w-3.5" />
@@ -296,7 +462,7 @@ function AdminLayout() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", stiffness: 300, damping: 32 }}
-              className="admin-theme fixed inset-y-0 left-0 z-50 w-[260px] border-r border-white/[0.06] bg-[var(--background)] lg:hidden"
+              className="admin-theme fixed inset-y-0 left-0 z-50 w-[260px] border-r border-[var(--line-1)] bg-[var(--background)] lg:hidden"
             >
               {sidebar}
             </motion.aside>
@@ -306,7 +472,7 @@ function AdminLayout() {
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/[0.06] bg-[var(--background)]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-[var(--line-1)] bg-[var(--background)]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -321,19 +487,33 @@ function AdminLayout() {
           </Link>
         </header>
 
-        <main className="px-4 py-8 sm:px-8 lg:px-10">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pathname}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+        {/*
+          Page transition.
+
+          This used to be `AnimatePresence mode="wait"`, which unmounts the old
+          page, waits out its exit, and only then mounts the new one. For that
+          whole gap the container is empty, so the page collapses to zero
+          height, the scrollbar jumps, and everything snaps back when the new
+          page arrives — the "glitch" when moving between sections.
+
+          Instead: no exit animation and no waiting. The new page fades and
+          lifts in over a floor of min-height, so the frame never collapses.
+          `key` still forces a fresh mount per route, which is what resets
+          scroll-independent state.
+        */}
+        <main className="min-h-[calc(100vh-1px)] px-4 pb-28 pt-8 sm:px-8 lg:px-10 lg:pb-8">
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <Outlet />
+          </motion.div>
         </main>
+
+        {/* Phones only; the sidebar covers this from `lg` up. */}
+        <BottomNav />
       </div>
     </div>
   );

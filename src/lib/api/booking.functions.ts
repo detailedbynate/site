@@ -111,6 +111,77 @@ export const getAvailability = createServerFn({ method: "GET" })
     return { slots: slots.map((s) => ({ startTime: s.startTime, startISO: s.startISO })) };
   });
 
+/**
+ * Decide what a code is worth against a subtotal.
+ *
+ * Used by BOTH the preview the customer sees and the real booking, so the
+ * quoted discount and the charged discount can never disagree. Never throws
+ * for a bad code — it returns a reason, because "SPRING25 has expired" is a
+ * more useful thing to show than a generic failure.
+ */
+async function evaluateCoupon(code: string, subtotal: number) {
+  const { findCouponByCode } = await import("../db.server");
+  const { applyDiscount } = await import("../services");
+
+  const trimmed = code.trim();
+  if (!trimmed) return { ok: false as const, reason: "Enter a code." };
+
+  const coupon = await findCouponByCode(trimmed);
+  if (!coupon || !coupon.active) {
+    // Same message for "doesn't exist" and "switched off" — no reason to
+    // help someone enumerate which codes are real.
+    return { ok: false as const, reason: "That code isn't valid." };
+  }
+  if (coupon.expiresAt && coupon.expiresAt < new Date().toISOString().slice(0, 10)) {
+    return { ok: false as const, reason: "That code has expired." };
+  }
+  if (coupon.maxUses != null && coupon.timesUsed >= coupon.maxUses) {
+    return { ok: false as const, reason: "That code has been fully redeemed." };
+  }
+
+  const newTotal = applyDiscount(subtotal, { type: coupon.type, value: coupon.value });
+  const discount = Math.max(0, subtotal - newTotal);
+  if (discount <= 0) {
+    return { ok: false as const, reason: "That code doesn't apply to this order." };
+  }
+
+  return {
+    ok: true as const,
+    couponId: coupon.id,
+    code: coupon.code,
+    type: coupon.type,
+    value: coupon.value,
+    discount,
+    newTotal,
+  };
+}
+
+/** Live check as the customer types a code, before they commit to booking. */
+export const checkCoupon = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      code: z.string().min(1).max(40),
+      serviceId: idSchema,
+      addOnIds: addOnIdsSchema,
+      location: z.enum(["mobile", "shop"]).nullable().default(null),
+    }),
+  )
+  .handler(async ({ data }) => {
+    // Price the order server-side; a client-supplied subtotal could be forged
+    // to inflate a percentage discount.
+    const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location);
+    const result = await evaluateCoupon(data.code, price);
+
+    if (!result.ok) return { ok: false as const, reason: result.reason };
+    return {
+      ok: true as const,
+      code: result.code,
+      discount: result.discount,
+      newTotal: result.newTotal,
+      label: result.type === "percent" ? `${result.value}% off` : `$${result.value} off`,
+    };
+  });
+
 export const createBooking = createServerFn({ method: "POST" })
   .inputValidator(
     z
@@ -132,6 +203,7 @@ export const createBooking = createServerFn({ method: "POST" })
         }),
         notes: z.string().max(1000).optional(),
         customFields: z.record(z.string().max(60), z.string().max(500)).default({}),
+        couponCode: z.string().max(40).optional(),
       })
       // Mobile jobs need somewhere to drive to. Enforced server-side so the
       // client validation isn't the only thing standing between a mobile
@@ -172,6 +244,25 @@ export const createBooking = createServerFn({ method: "POST" })
           ? "That date isn't available for booking. Please choose another day."
           : "That time was just booked by someone else — please pick another slot.",
       );
+    }
+
+    // Re-evaluate the coupon here rather than trusting whatever the client
+    // previewed. A code that expired or ran out between preview and submit is
+    // simply not applied — the booking still goes through at full price
+    // rather than failing outright, which would be a worse experience.
+    let discount = 0;
+    let appliedCoupon: string | undefined;
+    if (data.couponCode?.trim()) {
+      const result = await evaluateCoupon(data.couponCode, totalPrice);
+      if (result.ok) {
+        const { redeemCoupon } = await import("../db.server");
+        // redeemCoupon re-checks the cap inside its transaction, so two
+        // bookings racing for the last use can't both win.
+        if (await redeemCoupon(result.couponId)) {
+          discount = result.discount;
+          appliedCoupon = result.code;
+        }
+      }
     }
 
     const client = await findOrCreateClient({
@@ -226,6 +317,7 @@ export const createBooking = createServerFn({ method: "POST" })
       address: data.location === "mobile" ? data.address : undefined,
       vehicle: data.vehicle,
       totalPrice,
+      discount: discount > 0 ? discount : undefined,
       notes: data.notes,
       googleEventId: googleEventId ?? undefined,
     });
@@ -241,7 +333,15 @@ export const createBooking = createServerFn({ method: "POST" })
       .then(({ runTriggerAndCustom }) => runTriggerAndCustom("booking_confirmed", booking))
       .catch(() => undefined);
 
-    return { booking, client };
+    // Same contract for the outgoing webhook: a notification, not part of
+    // the transaction.
+    void import("../webhooks.server")
+      .then(({ sendWebhook }) => sendWebhook("booking_created", booking))
+      .catch(() => undefined);
+
+    // `appliedCoupon` is reported back so the confirmation can say the code
+    // landed — and, just as importantly, stay silent if it quietly didn't.
+    return { booking, client, appliedCoupon, discount };
   });
 
 /**
@@ -277,6 +377,9 @@ export const getPublicGallery = createServerFn({ method: "GET" }).handler(async 
         return {
           id: p.id,
           label: p.label,
+          detail: p.detail,
+          description: p.description,
+          packageLabel: p.packageLabel,
           beforeUrl: b ? await readPhotoDataUrl(b.id, b.mime) : null,
           afterUrl: a ? await readPhotoDataUrl(a.id, a.mime) : null,
         };
