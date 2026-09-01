@@ -1070,6 +1070,10 @@ export const getIntegrations = createServerFn({ method: "GET" }).handler(async (
       calendarId: settings.googleCalendarId,
       calendars,
       listError,
+      // Why the last calendar call failed. Calendar work is non-fatal by
+      // design, so without surfacing this a broken connection looks fine.
+      lastError: settings.googleLastError,
+      lastErrorAt: settings.googleLastErrorAt,
       redirectUri: await currentRedirectUri(),
     },
     email: {

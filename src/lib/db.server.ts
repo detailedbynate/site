@@ -213,6 +213,12 @@ export interface Settings {
   googleCalendarId: string;
   /** Which Google account is connected, for display only. */
   googleAccountEmail: string;
+  /**
+   * Why the last calendar call failed. Calendar work is deliberately
+   * non-fatal, so without this a broken connection is completely silent.
+   */
+  googleLastError: string;
+  googleLastErrorAt: string;
   /** Resend API key — HTTP only, so no SMTP dependency. */
   resendApiKey: string;
   emailFrom: string;
@@ -510,6 +516,8 @@ Notes: {{notes}}`,
   googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN ?? "",
   googleCalendarId: process.env.GOOGLE_CALENDAR_ID ?? "primary",
   googleAccountEmail: "",
+  googleLastError: "",
+  googleLastErrorAt: "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
   emailReplyTo: "",

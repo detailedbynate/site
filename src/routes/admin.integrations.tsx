@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  AlertTriangle,
   CalendarCheck,
   CheckCircle2,
   Copy,
@@ -180,6 +181,25 @@ function Integrations() {
             {g.connected ? "Connected" : "Not connected"}
           </span>
         </div>
+
+        {/* A calendar failure never breaks a booking, so it would otherwise
+            leave no trace at all. This is that trace. */}
+        {g.connected && g.lastError && (
+          <div className="mt-5 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-4 py-3">
+            <p className="flex items-center gap-2 text-[12.5px] font-semibold text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5" /> Last calendar problem
+            </p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-amber-100/90">{g.lastError}</p>
+            {g.lastErrorAt && (
+              <p className="mt-1 text-[11px] text-amber-200/60">
+                {new Date(g.lastErrorAt).toLocaleString()}
+              </p>
+            )}
+            <p className="mt-2 text-[11.5px] text-muted-foreground">
+              Fix it, then hit Test connection — this clears once a call succeeds.
+            </p>
+          </div>
+        )}
 
         {g.connected ? (
           <div className="mt-6 space-y-5">
