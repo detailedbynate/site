@@ -35,3 +35,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Bun lockfile. This project builds with npm (package-lock.json is the
+# real lockfile). A stale bun.lock made Railway pick Bun and fail on
+# --frozen-lockfile, so keep it out of the repo entirely.
+bun.lock
+bun.lockb
