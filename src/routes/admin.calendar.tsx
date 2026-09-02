@@ -1,9 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, Ban, X } from "lucide-react";
 
-import { getCalendarEvents, listAppointments } from "@/lib/api/admin.functions";
+import {
+  getCalendarEvents,
+  listAppointments,
+  listTimeOffEntries,
+  removeTimeOff,
+  saveTimeOff,
+} from "@/lib/api/admin.functions";
 import {
   ErrorNote,
   GlassCard,
@@ -22,6 +28,7 @@ export const Route = createFileRoute("/admin/calendar")({
 
 type Row = Awaited<ReturnType<typeof listAppointments>>["bookings"][number];
 type GEvent = Awaited<ReturnType<typeof getCalendarEvents>>["events"][number];
+type TimeOffEntry = Awaited<ReturnType<typeof listTimeOffEntries>>["entries"][number];
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -52,6 +59,17 @@ function CalendarPage() {
     connected: false,
     events: [],
   });
+
+  const [timeOff, setTimeOff] = useState<TimeOffEntry[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const loadTimeOff = useCallback(() => {
+    listTimeOffEntries()
+      .then((r) => setTimeOff(r.entries))
+      .catch(() => setTimeOff([]));
+  }, []);
+
+  useEffect(loadTimeOff, [loadTimeOff]);
 
   useEffect(() => {
     listAppointments()
@@ -106,6 +124,12 @@ function CalendarPage() {
     return map;
   }, [gcal.events, rows]);
 
+  /** Blocks covering a given day. */
+  const offFor = useCallback(
+    (date: string) => timeOff.filter((t) => t.startDate <= date && t.endDate >= date),
+    [timeOff],
+  );
+
   const cells = useMemo(() => {
     const first = new Date(year, month, 1);
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -138,6 +162,7 @@ function CalendarPage() {
 
   const selectedJobs = selected ? (byDate.get(selected) ?? []) : [];
   const selectedEvents = selected ? (eventsByDate.get(selected) ?? []) : [];
+  const selectedOff = selected ? offFor(selected) : [];
 
   return (
     <>
@@ -182,7 +207,8 @@ function CalendarPage() {
             const isToday = date === todayISO;
             const isSelected = date === selected;
             const revenue = list.reduce((s, b) => s + (b.totalPrice ?? 0), 0);
-            const blocked = events.some((e) => e.allDay);
+            const off = offFor(date);
+            const blocked = events.some((e) => e.allDay) || off.some((t) => t.allDay);
 
             return (
               <motion.button
@@ -228,6 +254,9 @@ function CalendarPage() {
                   {events.slice(0, 2).map((e) => (
                     <span key={e.id} className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70" />
                   ))}
+                  {off.slice(0, 1).map((t) => (
+                    <span key={t.id} className="h-1.5 w-1.5 rounded-full bg-amber-400/80" />
+                  ))}
                 </div>
 
                 <div className="mt-1.5 hidden space-y-1 sm:block">
@@ -238,6 +267,15 @@ function CalendarPage() {
                       title={`${time12h(b.startTime)} ${b.client?.name ?? ""} — ${b.serviceTitle}`}
                     >
                       {time12h(b.startTime)} {b.client?.name?.split(" ")[0] ?? ""}
+                    </div>
+                  ))}
+                  {off.slice(0, 1).map((t) => (
+                    <div
+                      key={t.id}
+                      className="truncate rounded-md bg-amber-400/12 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+                      title={t.reason || "Time off"}
+                    >
+                      {t.allDay ? "Time off" : `${time12h(t.startTime)} off`}
                     </div>
                   ))}
                   {/* Google entries: outlined, never filled, so a glance still
@@ -281,6 +319,10 @@ function CalendarPage() {
               <span className="h-2 w-2 rounded-full bg-muted-foreground/70" />
               {gcal.connected ? "From Google Calendar" : "Google Calendar not connected"}
             </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber-400/80" />
+              Time off
+            </span>
           </div>
           <p className="tnum text-xs text-muted-foreground">
             {monthLabel} booked value:{" "}
@@ -307,7 +349,9 @@ function CalendarPage() {
               </p>
 
               {selectedJobs.length === 0 && selectedEvents.length === 0 ? (
-                <p className="mt-3 text-sm text-muted-foreground">Nothing on this day.</p>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {selectedOff.length ? "No jobs booked." : "Nothing on this day."}
+                </p>
               ) : (
                 <ul className="mt-4 space-y-2.5">
                   {selectedJobs.map((b, i) => (
@@ -378,6 +422,88 @@ function CalendarPage() {
                   ))}
                 </ul>
               )}
+
+              {/*
+                Blocking time lives here rather than in Settings because this
+                is the page you are on when you realise you need the day. It
+                is also the only way to be unavailable without Google — the
+                calendar used to be the sole mechanism, which was no use to
+                anyone who hadn't connected it.
+              */}
+              <div className="mt-5 border-t border-[var(--line-1)] pt-4">
+                {selectedOff.length > 0 ? (
+                  <ul className="space-y-2">
+                    {selectedOff.map((t) => (
+                      <li
+                        key={t.id}
+                        className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-400/[0.08] px-3 py-2.5"
+                      >
+                        <Ban className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+                        <span className="text-[12.5px] font-semibold text-amber-200">
+                          {t.allDay
+                            ? "Unavailable all day"
+                            : `Unavailable ${time12h(t.startTime)}–${time12h(t.endTime)}`}
+                        </span>
+                        {t.startDate !== t.endDate && (
+                          <span className="text-[11.5px] text-muted-foreground">
+                            {t.startDate} → {t.endDate}
+                          </span>
+                        )}
+                        {t.reason && (
+                          <span className="text-[11.5px] text-muted-foreground">· {t.reason}</span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={async () => {
+                            setBusy(true);
+                            try {
+                              await removeTimeOff({ data: { id: t.id } });
+                              loadTimeOff();
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                          className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                        >
+                          <X className="h-3.5 w-3.5" /> Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await saveTimeOff({
+                          data: {
+                            startDate: selected,
+                            endDate: selected,
+                            allDay: true,
+                            reason: "",
+                          },
+                        });
+                        loadTimeOff();
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <Ban className="h-3.5 w-3.5" /> Block this day off
+                  </Button>
+                )}
+                {selectedJobs.length > 0 && selectedOff.length > 0 && (
+                  <p className="mt-2 text-[11.5px] text-muted-foreground">
+                    Blocking stops new bookings. The {selectedJobs.length} job
+                    {selectedJobs.length === 1 ? "" : "s"} already booked stay put — cancel
+                    {selectedJobs.length === 1 ? " it" : " them"} from Appointments if you need to.
+                  </p>
+                )}
+              </div>
 
               {!gcal.connected && (
                 <p className="mt-4 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">

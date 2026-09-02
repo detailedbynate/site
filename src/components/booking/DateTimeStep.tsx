@@ -10,12 +10,10 @@ import type { AddOnId, ServiceId } from "@/lib/services";
 // with a reason — but every value now comes from the server, which reconciles
 // business hours, Google Calendar busy blocks, and existing local bookings.
 
-type DayAvailability = {
-  date: string;
-  available: boolean;
-  slotCount: number;
-  reason?: "closed" | "booked" | "lead-time";
-};
+// Derived from the server function rather than hand-copied. The copy that
+// used to live here silently went stale the moment a new reason was added,
+// and the mismatch only surfaced as a type error in an unrelated file.
+type DayAvailability = Awaited<ReturnType<typeof getBookableDays>>["days"][number];
 
 type Slot = { startTime: string; startISO: string };
 
@@ -38,6 +36,7 @@ const reasonLabel: Record<NonNullable<DayAvailability["reason"]>, string> = {
   closed: "Closed this day",
   booked: "Fully booked",
   "lead-time": "Too soon to book",
+  "time-off": "Unavailable this day",
 };
 
 /** Parse YYYY-MM-DD as a local date (avoids UTC shifting the day back one). */

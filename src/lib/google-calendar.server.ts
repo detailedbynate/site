@@ -357,6 +357,51 @@ export async function createCalendarEvent(input: CreateEventInput): Promise<stri
   }
 }
 
+/**
+ * Update an existing event in place.
+ *
+ * Returns false if the event is gone from Google (deleted by hand, or the
+ * calendar was switched), so the caller can create a fresh one instead of
+ * losing the booking off the calendar entirely.
+ *
+ * Patching rather than delete-and-recreate keeps the event's identity: its
+ * link still works, guests are not re-invited from scratch, and any colour
+ * or reminder the owner set by hand survives.
+ */
+export async function updateCalendarEvent(
+  eventId: string,
+  input: CreateEventInput,
+): Promise<boolean> {
+  if (!(await isGoogleCalendarConfigured())) return false;
+
+  const settings = await getSettings();
+  const calendar = await getCalendarClient();
+
+  try {
+    await calendar.events.patch({
+      calendarId: settings.googleCalendarId,
+      eventId,
+      requestBody: {
+        summary: input.summary,
+        description: input.description,
+        location: input.location,
+        start: { dateTime: input.startISO, timeZone: settings.timezone },
+        end: { dateTime: input.endISO, timeZone: settings.timezone },
+      },
+    });
+    await clearCalendarError();
+    return true;
+  } catch (err) {
+    const status = (err as { code?: number; status?: number }).code
+      ?? (err as { status?: number }).status;
+    // 404 gone, 410 deleted: not an error worth reporting, just a signal to
+    // create a replacement.
+    if (status === 404 || status === 410) return false;
+    await recordCalendarError(googleMessage(err));
+    throw err;
+  }
+}
+
 export async function deleteCalendarEvent(eventId: string): Promise<void> {
   if (!(await isGoogleCalendarConfigured())) return;
   const settings = await getSettings();

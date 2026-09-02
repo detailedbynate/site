@@ -176,7 +176,6 @@ export const setBookingStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { findBookingById, updateBookingStatus } = await import("../db.server");
-    const { deleteCalendarEvent } = await import("../google-calendar.server");
     const { requireUser } = await import("../auth.server");
     await requireUser();
 
@@ -218,12 +217,12 @@ export const setBookingStatus = createServerFn({ method: "POST" })
         .catch(() => undefined);
     }
 
-    if (data.status === "cancelled" && existing.googleEventId) {
-      // Best-effort: a Calendar hiccup shouldn't block freeing the slot
-      // locally, which is what actually governs availability.
-      await deleteCalendarEvent(existing.googleEventId).catch((err) =>
-        console.error("Failed to delete calendar event on cancel:", err),
-      );
+    // Cancelling removes the event; un-cancelling puts it back. The second
+    // half used to be missing, so a job restored after a cancellation was
+    // gone from the calendar for good.
+    if (data.status !== existing.status) {
+      const { syncBookingToCalendar } = await import("../calendar-sync.server");
+      await syncBookingToCalendar(data.bookingId);
     }
 
     return { booking };
@@ -256,9 +255,8 @@ export const rescheduleAppointment = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { findBookingById, findClientById, rescheduleBooking } = await import("../db.server");
+    const { findBookingById, rescheduleBooking } = await import("../db.server");
     const { getAvailableSlots } = await import("../availability.server");
-    const { createCalendarEvent, deleteCalendarEvent } = await import("../google-calendar.server");
     const { requireUser } = await import("../auth.server");
     await requireUser();
 
@@ -269,33 +267,16 @@ export const rescheduleAppointment = createServerFn({ method: "POST" })
     const match = slots.find((s) => s.startTime === data.startTime);
     if (!match) throw new Error("That slot isn't available any more.");
 
-    // Replace the calendar event rather than trying to patch it.
-    let googleEventId: string | undefined;
-    if (booking.googleEventId) {
-      await deleteCalendarEvent(booking.googleEventId).catch(() => undefined);
-    }
-    const client = await findClientById(booking.clientId);
-    const endISO = new Date(
-      new Date(match.startISO).getTime() + booking.durationMinutes * 60_000,
-    ).toISOString();
+    // Move the booking first, then let the sync rebuild the event from it.
+    // Doing it in this order means the calendar entry is generated from the
+    // booking's real contents — customer, phone, address, vehicle, add-ons —
+    // instead of the stub description this used to write, which replaced all
+    // of that with "Rescheduled."
+    const updated = await rescheduleBooking(data.bookingId, data.date, data.startTime);
+    const { syncBookingToCalendar } = await import("../calendar-sync.server");
+    await syncBookingToCalendar(data.bookingId);
 
-    const created = await createCalendarEvent({
-      summary: `${booking.serviceTitle} Detail — ${client?.name ?? "Client"}`,
-      description: `Rescheduled. Reference ${booking.reference}.`,
-      startISO: match.startISO,
-      endISO,
-      attendeeEmail: client?.email,
-      location: booking.location === "mobile" ? booking.address : undefined,
-    }).catch(() => null);
-    googleEventId = created ?? undefined;
-
-    const updated = await rescheduleBooking(
-      data.bookingId,
-      data.date,
-      data.startTime,
-      googleEventId,
-    );
-    return { booking: updated };
+    return { booking: (await findBookingById(data.bookingId)) ?? updated };
   });
 
 /** Hard-delete. Cancelling is preferred; this is for scrubbing test data. */
@@ -312,6 +293,69 @@ export const removeAppointment = createServerFn({ method: "POST" })
       await deleteCalendarEvent(existing.googleEventId).catch(() => undefined);
     }
     await deleteBooking(data.bookingId);
+    return { ok: true };
+  });
+
+// --------------------------- Time off ---------------------------------
+
+export const listTimeOffEntries = createServerFn({ method: "GET" }).handler(async () => {
+  const { listTimeOff } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+  return { entries: await listTimeOff() };
+});
+
+/**
+ * Mark yourself unavailable — a day, a run of days, or a slice of hours.
+ *
+ * This is the only way to block time without Google Calendar connected, and
+ * it stays authoritative even when it is: availability subtracts these the
+ * same way it subtracts calendar events and existing jobs.
+ */
+export const saveTimeOff = createServerFn({ method: "POST" })
+  .inputValidator(
+    z
+      .object({
+        id: z.string().optional(),
+        startDate: dateSchema,
+        endDate: dateSchema,
+        allDay: z.boolean().default(true),
+        startTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+        endTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+        reason: z.string().max(200).default(""),
+      })
+      .refine((v) => v.endDate >= v.startDate, {
+        message: "The end date can't be before the start date.",
+      })
+      .refine((v) => v.allDay || (v.startTime && v.endTime && v.endTime > v.startTime), {
+        message: "For part of a day, give a start and end time in order.",
+      }),
+  )
+  .handler(async ({ data }) => {
+    const { upsertTimeOff } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const entry = await upsertTimeOff({
+      id: data.id || crypto.randomUUID(),
+      startDate: data.startDate,
+      endDate: data.endDate,
+      allDay: data.allDay,
+      startTime: data.allDay ? "" : (data.startTime ?? ""),
+      endTime: data.allDay ? "" : (data.endTime ?? ""),
+      reason: data.reason.trim(),
+      createdAt: new Date().toISOString(),
+    });
+    return { entry };
+  });
+
+export const removeTimeOff = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: idSchema }))
+  .handler(async ({ data }) => {
+    const { deleteTimeOff } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    await deleteTimeOff(data.id);
     return { ok: true };
   });
 
@@ -1194,11 +1238,12 @@ export const getCalendarEvents = createServerFn({ method: "GET" })
     await requireUser();
 
     const settings = await getSettings();
+    const { zonedTimeToISO } = await import("../availability.server");
+    // Month boundaries in the BUSINESS timezone. Using UTC midnight would
+    // clip the last few hours of the final day for anywhere west of UTC.
     const events = await listCalendarEvents(
-      new Date(`${data.from}T00:00:00Z`).toISOString(),
-      // Exclusive end, plus a day of slack so an event starting late on the
-      // last day of the month still comes back.
-      new Date(`${data.to}T00:00:00Z`).toISOString(),
+      zonedTimeToISO(data.from, 0, settings.timezone),
+      zonedTimeToISO(data.to, 0, settings.timezone),
     );
 
     return {

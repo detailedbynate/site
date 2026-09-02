@@ -19,6 +19,39 @@ import {
   inputCls,
 } from "@/components/admin/ui";
 
+/**
+ * The zones a mobile detailer in North America plausibly works in, plus UTC.
+ * Anything else already stored is preserved as its own option rather than
+ * being silently replaced — see the select below.
+ */
+const TIMEZONES = [
+  { id: "America/Toronto", label: "Eastern Time — Toronto (EST/EDT)" },
+  { id: "America/New_York", label: "Eastern Time — New York (EST/EDT)" },
+  { id: "America/Chicago", label: "Central Time — Chicago (CST/CDT)" },
+  { id: "America/Denver", label: "Mountain Time — Denver (MST/MDT)" },
+  { id: "America/Phoenix", label: "Mountain Time — Phoenix (no DST)" },
+  { id: "America/Vancouver", label: "Pacific Time — Vancouver (PST/PDT)" },
+  { id: "America/Los_Angeles", label: "Pacific Time — Los Angeles (PST/PDT)" },
+  { id: "America/Halifax", label: "Atlantic Time — Halifax (AST/ADT)" },
+  { id: "America/St_Johns", label: "Newfoundland Time — St. John's" },
+  { id: "UTC", label: "UTC" },
+];
+
+/** The current time in a zone, so the choice can be checked at a glance. */
+function formatNow(timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date());
+  } catch {
+    return "an unrecognised zone";
+  }
+}
+
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
 });
@@ -124,6 +157,35 @@ function SettingsPage() {
                 maxLength={120}
                 onChange={(e) => set("serviceArea", e.target.value)}
               />
+            </Field>
+            <Field
+              label="Time zone"
+              hint="Every booking time, calendar event and reminder is in this zone. Toronto and New York are both Eastern — same clock."
+            >
+              <select
+                className={inputCls}
+                value={s.timezone}
+                onChange={(e) => set("timezone", e.target.value)}
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz.id} value={tz.id}>
+                    {tz.label}
+                  </option>
+                ))}
+                {/* Whatever is stored wins, even if it isn't in the list —
+                    never silently switch someone's zone by rendering a select
+                    that can't represent their current value. */}
+                {!TIMEZONES.some((t) => t.id === s.timezone) && (
+                  <option value={s.timezone}>{s.timezone}</option>
+                )}
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                Right now that reads{" "}
+                <span className="font-semibold text-foreground">
+                  {formatNow(s.timezone)}
+                </span>
+                .
+              </p>
             </Field>
             <Field label="Mobile travel fee ($)" hint="Added when a customer picks mobile service.">
               <input

@@ -988,6 +988,23 @@ CREATE TABLE IF NOT EXISTS faqs (
   createdAt TEXT NOT NULL
 );
 
+-- Time off. Days or part-days you are not available, set from the admin.
+-- Without this the only way to block time was an event in Google Calendar,
+-- which is useless before Google is connected and unavailable to anyone who
+-- never connects it.
+CREATE TABLE IF NOT EXISTS timeOff (
+  id        TEXT PRIMARY KEY,
+  startDate TEXT NOT NULL,
+  endDate   TEXT NOT NULL,
+  allDay    INTEGER NOT NULL DEFAULT 1,
+  startTime TEXT NOT NULL DEFAULT '',
+  endTime   TEXT NOT NULL DEFAULT '',
+  reason    TEXT NOT NULL DEFAULT '',
+  createdAt TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeoff_range ON timeOff(startDate, endDate);
+
 CREATE INDEX IF NOT EXISTS idx_expenses_date    ON expenses(date DESC);
 CREATE INDEX IF NOT EXISTS idx_expenses_type    ON expenses(type);
 CREATE INDEX IF NOT EXISTS idx_expenses_asset   ON expenses(assetId);
@@ -1837,6 +1854,20 @@ export async function rescheduleBooking(
   });
 }
 
+/**
+ * Point a booking at its Google Calendar event, or clear the link.
+ *
+ * Clearing matters: a cancelled booking whose event was deleted must not keep
+ * a stale id, or the reschedule logic and the admin calendar's de-duplication
+ * both go looking for an event that no longer exists.
+ */
+export async function setBookingGoogleEventId(
+  bookingId: string,
+  googleEventId: string | null,
+): Promise<void> {
+  sql("UPDATE bookings SET googleEventId = ? WHERE id = ?").run(googleEventId, bookingId);
+}
+
 export async function deleteBooking(id: string): Promise<void> {
   sql("DELETE FROM bookings WHERE id = ?").run(id);
 }
@@ -2487,6 +2518,75 @@ export async function upsertFaq(f: Faq): Promise<Faq> {
 
 export async function deleteFaq(id: string): Promise<void> {
   sql("DELETE FROM faqs WHERE id = ?").run(id);
+}
+
+// --------------------------- Time off ---------------------------------
+
+export interface TimeOff {
+  id: string;
+  /** Inclusive YYYY-MM-DD. Same as endDate for a single day. */
+  startDate: string;
+  /** Inclusive. */
+  endDate: string;
+  /** Whole days off. When false, startTime/endTime bound each day. */
+  allDay: boolean;
+  startTime: string; // "HH:MM", only when allDay is false
+  endTime: string;
+  reason: string;
+  createdAt: string;
+}
+
+function toTimeOff(r: Row): TimeOff {
+  return {
+    id: String(r.id),
+    startDate: String(r.startDate),
+    endDate: String(r.endDate),
+    allDay: Boolean(r.allDay),
+    startTime: String(r.startTime ?? ""),
+    endTime: String(r.endTime ?? ""),
+    reason: String(r.reason ?? ""),
+    createdAt: String(r.createdAt),
+  };
+}
+
+export async function listTimeOff(): Promise<TimeOff[]> {
+  return (
+    sql("SELECT * FROM timeOff ORDER BY startDate ASC").all() as Row[]
+  ).map(toTimeOff);
+}
+
+/** Every block overlapping an inclusive date range. */
+export async function listTimeOffBetween(from: string, to: string): Promise<TimeOff[]> {
+  return (
+    sql(
+      "SELECT * FROM timeOff WHERE startDate <= ? AND endDate >= ? ORDER BY startDate ASC",
+    ).all(to, from) as Row[]
+  ).map(toTimeOff);
+}
+
+export async function upsertTimeOff(t: TimeOff): Promise<TimeOff> {
+  sql(
+    `INSERT INTO timeOff (id,startDate,endDate,allDay,startTime,endTime,reason,createdAt)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET
+       startDate=excluded.startDate, endDate=excluded.endDate,
+       allDay=excluded.allDay, startTime=excluded.startTime,
+       endTime=excluded.endTime, reason=excluded.reason`,
+  ).run(
+    t.id,
+    t.startDate,
+    t.endDate,
+    t.allDay ? 1 : 0,
+    t.startTime,
+    t.endTime,
+    t.reason,
+    t.createdAt,
+  );
+  return t;
+}
+
+export async function deleteTimeOff(id: string): Promise<void> {
+  sql("DELETE FROM timeOff WHERE id = ?").run(id);
 }
 
 // --------------------------- Avatars ----------------------------------

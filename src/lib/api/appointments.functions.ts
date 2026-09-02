@@ -202,6 +202,13 @@ export const updateAppointment = createServerFn({ method: "POST" })
       durationMinutes,
     });
 
+    // Push the change to Google. Editing used to skip this entirely, so
+    // switching a job from Silver to Diamond left a 1.5 hour block on the
+    // calendar for four hours of work — and the address, add-ons and price
+    // on the calendar entry stayed as they were booked.
+    const { syncBookingToCalendar } = await import("../calendar-sync.server");
+    await syncBookingToCalendar(data.id);
+
     return { booking, recomputed: computed, durationMinutes };
   });
 

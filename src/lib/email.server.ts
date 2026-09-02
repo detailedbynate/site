@@ -8,6 +8,7 @@ import {
   type Booking,
   type EmailTrigger,
 } from "./db.server";
+import { zonedTimeToISO } from "./availability.server";
 
 // Transactional email via Resend's HTTP API. Chosen over SMTP specifically
 // because it's a plain fetch() — no nodemailer, no native deps, consistent
@@ -211,8 +212,19 @@ export async function processScheduledEmails(): Promise<{ sent: number; checked:
       if (booking.status === "cancelled") continue;
       checked += 1;
 
-      // The booking's wall-clock start, read back in the business timezone.
-      const start = new Date(`${booking.date}T${booking.startTime}:00`).getTime();
+      /*
+        The booking's start as a real instant.
+
+        This used to be `new Date("2026-09-02T12:00:00")` with no zone on it,
+        which JavaScript reads in the SERVER's timezone. The server runs in
+        UTC, so every reminder was computed against a start four or five hours
+        off — a "24 hours before" reminder went out at 7 or 8pm the evening
+        before instead of at midday, and follow-ups drifted the same way.
+      */
+      const [bh, bm] = booking.startTime.split(":").map(Number);
+      const start = new Date(
+        zonedTimeToISO(booking.date, bh * 60 + bm, settings.timezone),
+      ).getTime();
       if (Number.isNaN(start)) continue;
 
       const dueAt =

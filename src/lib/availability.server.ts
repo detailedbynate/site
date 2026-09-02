@@ -1,4 +1,5 @@
-import { getBusyIntervals } from "./google-calendar.server";
+import { getBusyIntervals, type BusyInterval } from "./google-calendar.server";
+import { listTimeOffBetween, type TimeOff } from "./db.server";
 import { getSettings, listBookingsForDate } from "./db.server";
 
 // Business rules now live in the database (editable at /admin/settings)
@@ -30,9 +31,25 @@ function minutesToTime(mins: number): string {
 // apply it. This is accurate for a fixed offset; if the slot ever falls on
 // a DST transition day the offset is still correct because we look it up
 // for that specific date.
-function zonedTimeToISO(dateStr: string, minutesFromMidnight: number, timeZone: string): string {
+export function zonedTimeToISO(dateStr: string, minutesFromMidnight: number, timeZone: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);
-  const naiveUTC = Date.UTC(year, month - 1, day, 0, minutesFromMidnight / 60, minutesFromMidnight % 60);
+  /*
+    Date.UTC takes (year, month, day, HOURS, MINUTES, SECONDS).
+
+    This passed the hour COUNT into the minutes slot and the leftover minutes
+    into the seconds slot: noon (720) became 00:12:00, and the end of the day
+    (1440) became 00:24:00 instead of the next midnight. Two visible bugs came
+    out of that one line. A 12pm Gold booking landed on Google at 12:12am, and
+    availability asked Google for busy times between midnight and 00:24 - a
+    24-minute window that found nothing, so no calendar event ever blocked a
+    slot.
+
+    Midnight was the one input it got right, which is why the day grid and the
+    slot list still looked correct.
+  */
+  const hours = Math.floor(minutesFromMidnight / 60);
+  const minutes = minutesFromMidnight % 60;
+  const naiveUTC = Date.UTC(year, month - 1, day, hours, minutes, 0);
 
   // Find the offset for this date in the target timezone by formatting a
   // guess and comparing back, then correcting once (handles all real-world
@@ -102,6 +119,14 @@ export async function getAvailableSlots(
   /** Exclude one booking from the busy set — used when rescheduling it. */
   ignoreBookingId?: string,
   location?: "mobile" | "shop",
+  /**
+   * Busy intervals already fetched for a wider range. getAvailableDays pulls
+   * the whole booking window in one Google call and hands each day its share,
+   * instead of every day making its own request.
+   */
+  prefetchedBusy?: BusyInterval[],
+  /** Time off already fetched for a wider range, same reasoning as above. */
+  prefetchedTimeOff?: TimeOff[],
 ): Promise<SlotResult[]> {
   const cfg = await getSettings();
 
@@ -125,9 +150,10 @@ export async function getAvailableSlots(
   const dayStartISO = zonedTimeToISO(date, 0, cfg.timezone);
   const dayEndISO = zonedTimeToISO(date, 24 * 60, cfg.timezone);
 
-  const [googleBusy, localBookings] = await Promise.all([
-    getBusyIntervals(dayStartISO, dayEndISO),
+  const [googleBusy, localBookings, timeOff] = await Promise.all([
+    prefetchedBusy ?? getBusyIntervals(dayStartISO, dayEndISO),
     listBookingsForDate(date),
+    prefetchedTimeOff ?? listTimeOffBetween(date, date),
   ]);
 
   // When rescheduling, skip the calendar event this booking already created.
@@ -169,6 +195,19 @@ export async function getAvailableSlots(
         startMinutes: timeToMinutes(b.startTime),
         endMinutes: timeToMinutes(b.startTime) + b.durationMinutes,
       })),
+    // Time off set in the admin. A whole-day block covers the day; a
+    // part-day block only covers its own hours, and only on the days the
+    // block actually spans.
+    ...timeOff
+      .filter((t) => t.startDate <= date && t.endDate >= date)
+      .map((t) =>
+        t.allDay || !t.startTime || !t.endTime
+          ? { startMinutes: 0, endMinutes: 24 * 60 }
+          : {
+              startMinutes: timeToMinutes(t.startTime),
+              endMinutes: timeToMinutes(t.endTime),
+            },
+      ),
   ];
 
   const slots: SlotResult[] = [];
@@ -212,7 +251,7 @@ function dateOfInstant(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
-export type DayUnavailableReason = "closed" | "booked" | "lead-time";
+export type DayUnavailableReason = "closed" | "booked" | "lead-time" | "time-off";
 
 export interface DayAvailability {
   date: string; // YYYY-MM-DD
@@ -287,11 +326,51 @@ export async function getAvailableDays(
     candidates.push(date);
   }
 
+  /*
+    One Google call for the whole window, not one per day.
+
+    Each candidate day used to fetch its own busy list, so opening the booking
+    form fired ~18 parallel events.list requests for the same calendar. That
+    is slow, and it is the kind of traffic that gets an app rate-limited on a
+    busy calendar. Fetching the span once and slicing it per day is identical
+    in result and costs a single request.
+
+    An interval is handed to a day if it overlaps that day at all, so
+    multi-day events (a holiday, a trip) still block every day they cover.
+  */
+  let windowBusy: BusyInterval[] = [];
+  let windowTimeOff: TimeOff[] = [];
+  if (candidates.length) {
+    const from = candidates[0];
+    const to = candidates[candidates.length - 1];
+    [windowBusy, windowTimeOff] = await Promise.all([
+      getBusyIntervals(
+        zonedTimeToISO(from, 0, cfg.timezone),
+        zonedTimeToISO(to, 24 * 60, cfg.timezone),
+      ),
+      listTimeOffBetween(from, to),
+    ]);
+  }
+
   const results = await Promise.all(
-    candidates.map(async (date) => ({
-      date,
-      slots: await getAvailableSlots(date, durationMinutes, ignoreBookingId, location),
-    })),
+    candidates.map(async (date) => {
+      const dayStart = new Date(zonedTimeToISO(date, 0, cfg.timezone)).getTime();
+      const dayEnd = new Date(zonedTimeToISO(date, 24 * 60, cfg.timezone)).getTime();
+      const forDay = windowBusy.filter(
+        (b) => new Date(b.start).getTime() < dayEnd && new Date(b.end).getTime() > dayStart,
+      );
+      return {
+        date,
+        slots: await getAvailableSlots(
+          date,
+          durationMinutes,
+          ignoreBookingId,
+          location,
+          forDay,
+          windowTimeOff,
+        ),
+      };
+    }),
   );
 
   for (const { date, slots } of results) {
@@ -301,6 +380,11 @@ export async function getAvailableDays(
     if (slots.length > 0) {
       entry.available = true;
       delete entry.reason;
+    } else if (
+      windowTimeOff.some((t) => t.allDay && t.startDate <= date && t.endDate >= date)
+    ) {
+      // "Fully booked" would be a lie on a day you simply took off.
+      entry.reason = "time-off";
     }
   }
 
