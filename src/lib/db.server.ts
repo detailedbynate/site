@@ -287,6 +287,23 @@ export interface Settings {
    * clients don't load relative paths, and Gmail strips data: images.
    */
   emailLogoUrl: string;
+
+  // --- Legal pages ---
+  /** Plain text, blank line between paragraphs. A "## " line is a heading. */
+  privacyBody: string;
+  privacyUpdated: string;
+  termsBody: string;
+  termsUpdated: string;
+
+  // --- Analytics ---
+  /**
+   * A cookieless analytics script (Plausible, Fathom, Umami). Cookieless on
+   * purpose: it keeps the site outside consent-banner territory, since the
+   * only cookie set is the admin session, which is strictly necessary.
+   */
+  analyticsScriptUrl: string;
+  /** The site id / domain the provider wants, sent as data-domain. */
+  analyticsSiteId: string;
   emailReplyTo: string;
 
   /**
@@ -606,6 +623,12 @@ Notes: {{notes}}`,
   emailFrom: process.env.EMAIL_FROM ?? "",
   emailFromName: "",
   emailLogoUrl: "",
+  privacyBody: "",
+  privacyUpdated: "",
+  termsBody: "",
+  termsUpdated: "",
+  analyticsScriptUrl: "",
+  analyticsSiteId: "",
   emailReplyTo: "",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",

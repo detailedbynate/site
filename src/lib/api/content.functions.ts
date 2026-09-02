@@ -301,3 +301,39 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     statVehicles: s.statVehicles,
   };
 });
+
+/**
+ * One legal page, ready to render.
+ *
+ * The stored body wins; the shipped default is used only while the owner has
+ * not written their own, so the pages are never blank — an empty privacy
+ * policy is worse than a generic one.
+ */
+export const getLegalPage = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ page: z.enum(["privacy", "terms"]) }))
+  .handler(async ({ data }) => {
+    const { getSettings } = await import("../db.server");
+    const { DEFAULT_PRIVACY, DEFAULT_TERMS, renderLegal } = await import("../legal");
+    const { describePolicy } = await import("../policy");
+
+    const s = await getSettings();
+    const stored = data.page === "privacy" ? s.privacyBody : s.termsBody;
+    const updated = data.page === "privacy" ? s.privacyUpdated : s.termsUpdated;
+    const body = stored.trim() || (data.page === "privacy" ? DEFAULT_PRIVACY : DEFAULT_TERMS);
+
+    return {
+      title: data.page === "privacy" ? "Privacy Policy" : "Terms of Service",
+      body: renderLegal(body, {
+        business: s.businessName,
+        email: s.contactEmail,
+        phone: s.contactPhone,
+        // Reads as one clause whether or not a phone number is set, instead
+        // of leaving a dangling " or call ." in the sentence.
+        phoneClause: s.contactPhone ? ` or on ${s.contactPhone}` : "",
+        cancellationPolicy: describePolicy(s) || "Cancellations are free at any time.",
+        updated: updated || new Date().toISOString().slice(0, 10),
+      }),
+      isDefault: !stored.trim(),
+      businessName: s.businessName,
+    };
+  });

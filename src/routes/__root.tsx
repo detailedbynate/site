@@ -112,9 +112,34 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:description", content: description },
       ...(image ? [{ name: "twitter:image", content: image }] : []),
     ],
+    /*
+      Analytics.
+
+      Only ever a self-contained, cookieless script (Plausible, Fathom,
+      Umami). That choice is what keeps the site out of consent-banner
+      territory: the one cookie set anywhere is the admin session, which is
+      strictly necessary and exempt. Dropping Google Analytics in here would
+      change that, and the banner would then be required.
+    */
+    scripts: m?.analyticsScriptUrl
+      ? [
+          {
+            src: m.analyticsScriptUrl,
+            defer: true,
+            ...(m.analyticsSiteId ? { "data-domain": m.analyticsSiteId } : {}),
+          },
+        ]
+      : [],
     links: [
       { rel: "stylesheet", href: appCss },
-      ...(m?.faviconUrl ? [{ rel: "icon", href: m.faviconUrl }] : []),
+      ...(m?.faviconUrl
+        ? [
+            { rel: "icon", href: m.faviconUrl },
+            // iOS uses this one when someone adds the site to their home
+            // screen; without it Safari screenshots the page instead.
+            { rel: "apple-touch-icon", href: m.faviconUrl },
+          ]
+        : []),
       ...(url ? [{ rel: "canonical", href: url }] : []),
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },

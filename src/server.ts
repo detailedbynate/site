@@ -37,9 +37,72 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
+/*
+  robots.txt and sitemap.xml.
+
+  Served here rather than as routes because this version of TanStack Start has
+  no server-route API, and as static files they could not know the site's own
+  URL — which lives in Settings and differs between the Railway subdomain and
+  a real domain. Handled before the router so they never touch React.
+
+  The admin, the booking-management links and the legal pages are all kept out
+  of the sitemap: private, per-customer, or not worth ranking.
+*/
+async function staticSeoResponse(request: Request): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/robots.txt" && url.pathname !== "/sitemap.xml") return null;
+
+  const { getSettings } = await import("./lib/db.server");
+  const settings = await getSettings().catch(() => null);
+  // Fall back to the requesting origin so this still works before a Site URL
+  // is configured, and behind Railway's proxy.
+  const origin = (settings?.siteUrl || url.origin).replace(/\/+$/, "");
+
+  if (url.pathname === "/robots.txt") {
+    const body = [
+      "User-agent: *",
+      "Allow: /",
+      "Disallow: /admin",
+      "Disallow: /login",
+      // Each of these is one customer's private booking link.
+      "Disallow: /manage/",
+      "",
+      `Sitemap: ${origin}/sitemap.xml`,
+      "",
+    ].join("\n");
+    return new Response(body, {
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" },
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const pages: [path: string, priority: string][] = [
+    ["/", "1.0"],
+    ["/book", "0.9"],
+    ["/results", "0.7"],
+  ];
+  const rows = pages.map(
+    ([path, priority]) =>
+      `  <url><loc>${origin}${path}</loc><lastmod>${today}</lastmod><priority>${priority}</priority></url>`,
+  );
+  const body = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...rows,
+    "</urlset>",
+    "",
+  ].join("\n");
+  return new Response(body, {
+    headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const seo = await staticSeoResponse(request).catch(() => null);
+      if (seo) return seo;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

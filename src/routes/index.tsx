@@ -592,8 +592,19 @@ function Index() {
       <footer className="border-t border-border py-10 mt-10">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <p>© {new Date().getFullYear()} Detailed by Nate. All rights reserved.</p>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <p>Crafted with obsession in the {area}.</p>
+            {/* Required reading for anyone who books, and the terms are what
+                make the cancellation policy stick. */}
+            <Link
+              to="/privacy"
+              className="transition-colors hover:text-foreground"
+            >
+              Privacy
+            </Link>
+            <Link to="/terms" className="transition-colors hover:text-foreground">
+              Terms
+            </Link>
             {/* Owner's way in. Deliberately quiet — customers have no use for
                 it, and /admin is noindex and server-guarded regardless. */}
             <Link

@@ -3,26 +3,32 @@ import { motion, useInView, useMotionValue, useTransform, animate } from "motion
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Sparkles, Star, ShieldCheck, Clock, MapPin } from "lucide-react";
 import { BeforeAfter } from "@/components/BeforeAfter";
-import { getPublicGallery } from "@/lib/api/booking.functions";
+import { getSiteMeta, getPublicGallery } from "@/lib/api/booking.functions";
 
 export const Route = createFileRoute("/results")({
   // Uploaded pairs (Admin → SEO & branding) are shown ahead of the bundled
   // samples, so this page reflects real work once there is any.
   loader: async () => {
     try {
-      return { gallery: (await getPublicGallery()).pairs };
+      const [gallery, meta] = await Promise.all([getPublicGallery(), getSiteMeta()]);
+      return { gallery: gallery.pairs, business: meta.businessName };
     } catch {
-      return { gallery: [] };
+      return { gallery: [], business: "" };
     }
   },
-  head: () => ({
-    meta: [
-      { title: "Results — Detailed by Nate | Before & After Gallery" },
-      { name: "description", content: "Real before-and-after detailing results from Detailed by Nate, serving the Sault Ste. Marie area." },
-      { property: "og:title", content: "Results — Detailed by Nate" },
-      { property: "og:description", content: "Before-and-after detailing results from the Sault Ste. Marie area." },
-    ],
-  }),
+  head: ({ loaderData }) => {
+    const name = loaderData?.business || "Detailed by Nate";
+    const title = `Results — ${name} | Before & After Gallery`;
+    const description = `Real before-and-after detailing results from ${name}.`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: `Results — ${name}` },
+        { property: "og:description", content: description },
+      ],
+    };
+  },
   component: ResultsPage,
 });
 

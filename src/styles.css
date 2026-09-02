@@ -475,3 +475,23 @@
   color: transparent;
   animation: shimmer 4s linear infinite;
 }
+
+/*
+  Stop iOS zooming in when a field is focused.
+
+  Mobile Safari zooms the whole page whenever a focused input has a computed
+  font-size below 16px, and it does NOT zoom back out afterwards — so a
+  customer typing their name on step 5 stayed zoomed for the rest of the
+  booking, with the buttons pushed off-screen. Raising the size only on small
+  screens is the only fix that doesn't involve `maximum-scale=1`, which
+  disables pinch-zoom for everyone and is an accessibility failure.
+
+  Capped at the `sm` breakpoint so desktop keeps its 14px fields.
+*/
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

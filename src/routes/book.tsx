@@ -12,14 +12,26 @@ export const Route = createFileRoute("/book")({
       return { business: null };
     }
   },
-  head: () => ({
-    meta: [
-      { title: "Book Now — Detailed by Nate" },
-      { name: "description", content: "Book your detailing appointment with Detailed by Nate. Serving the Sault Ste. Marie area." },
-      { property: "og:title", content: "Book Now — Detailed by Nate" },
-      { property: "og:description", content: "Book your detailing appointment. Mobile & in-studio service in the Sault Ste. Marie area." },
-    ],
-  }),
+  // Built from the loader, not hardcoded: the business name and service area
+  // are editable in Settings, and a title that still said "Detailed by Nate,
+  // Sault Ste. Marie" after either changed would be wrong in the one place
+  // customers and crawlers actually read.
+  head: ({ loaderData }) => {
+    const name = loaderData?.business?.name || "Detailed by Nate";
+    const area = loaderData?.business?.serviceArea;
+    const title = `Book Now — ${name}`;
+    const description = `Book your detailing appointment with ${name}.${
+      area ? ` Serving ${area}.` : ""
+    }`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+      ],
+    };
+  },
   component: BookPage,
 });
 

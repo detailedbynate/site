@@ -13,7 +13,9 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as BookRouteImport } from './routes/book'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResultsRouteImport } from './routes/results'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminAddonsRouteImport } from './routes/admin.addons'
 import { Route as AdminAgentsRouteImport } from './routes/admin.agents'
@@ -28,6 +30,7 @@ import { Route as AdminFormFieldsRouteImport } from './routes/admin.form-fields'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin.integrations'
 import { Route as AdminLocationsRouteImport } from './routes/admin.locations'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminPagesRouteImport } from './routes/admin.pages'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminSalesRouteImport } from './routes/admin.sales'
 import { Route as AdminSeoRouteImport } from './routes/admin.seo'
@@ -56,9 +59,19 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResultsRoute = ResultsRouteImport.update({
   id: '/results',
   path: '/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -131,6 +144,11 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
   path: '/orders',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPagesRoute = AdminPagesRouteImport.update({
+  id: '/pages',
+  path: '/pages',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
@@ -172,7 +190,9 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/book': typeof BookRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
+  '/terms': typeof TermsRoute
   '/admin/addons': typeof AdminAddonsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/appointments': typeof AdminAppointmentsRoute
@@ -186,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/pages': typeof AdminPagesRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/sales': typeof AdminSalesRoute
   '/admin/seo': typeof AdminSeoRoute
@@ -199,7 +220,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/book': typeof BookRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
+  '/terms': typeof TermsRoute
   '/admin/addons': typeof AdminAddonsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/appointments': typeof AdminAppointmentsRoute
@@ -213,6 +236,7 @@ export interface FileRoutesByTo {
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/pages': typeof AdminPagesRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/sales': typeof AdminSalesRoute
   '/admin/seo': typeof AdminSeoRoute
@@ -228,7 +252,9 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/book': typeof BookRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
+  '/terms': typeof TermsRoute
   '/admin/addons': typeof AdminAddonsRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/appointments': typeof AdminAppointmentsRoute
@@ -242,6 +268,7 @@ export interface FileRoutesById {
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/locations': typeof AdminLocationsRoute
   '/admin/orders': typeof AdminOrdersRoute
+  '/admin/pages': typeof AdminPagesRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/sales': typeof AdminSalesRoute
   '/admin/seo': typeof AdminSeoRoute
@@ -258,7 +285,9 @@ export interface FileRouteTypes {
     | '/admin'
     | '/book'
     | '/login'
+    | '/privacy'
     | '/results'
+    | '/terms'
     | '/admin/addons'
     | '/admin/agents'
     | '/admin/appointments'
@@ -272,6 +301,7 @@ export interface FileRouteTypes {
     | '/admin/integrations'
     | '/admin/locations'
     | '/admin/orders'
+    | '/admin/pages'
     | '/admin/payments'
     | '/admin/sales'
     | '/admin/seo'
@@ -285,7 +315,9 @@ export interface FileRouteTypes {
     | '/'
     | '/book'
     | '/login'
+    | '/privacy'
     | '/results'
+    | '/terms'
     | '/admin/addons'
     | '/admin/agents'
     | '/admin/appointments'
@@ -299,6 +331,7 @@ export interface FileRouteTypes {
     | '/admin/integrations'
     | '/admin/locations'
     | '/admin/orders'
+    | '/admin/pages'
     | '/admin/payments'
     | '/admin/sales'
     | '/admin/seo'
@@ -313,7 +346,9 @@ export interface FileRouteTypes {
     | '/admin'
     | '/book'
     | '/login'
+    | '/privacy'
     | '/results'
+    | '/terms'
     | '/admin/addons'
     | '/admin/agents'
     | '/admin/appointments'
@@ -327,6 +362,7 @@ export interface FileRouteTypes {
     | '/admin/integrations'
     | '/admin/locations'
     | '/admin/orders'
+    | '/admin/pages'
     | '/admin/payments'
     | '/admin/sales'
     | '/admin/seo'
@@ -342,7 +378,9 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   BookRoute: typeof BookRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ResultsRoute: typeof ResultsRoute
+  TermsRoute: typeof TermsRoute
   ManageTokenRoute: typeof ManageTokenRoute
 }
 
@@ -376,11 +414,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/results': {
       id: '/results'
       path: '/results'
       fullPath: '/results'
       preLoaderRoute: typeof ResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -481,6 +533,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/pages': {
+      id: '/admin/pages'
+      path: '/pages'
+      fullPath: '/admin/pages'
+      preLoaderRoute: typeof AdminPagesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/payments': {
       id: '/admin/payments'
       path: '/payments'
@@ -547,6 +606,7 @@ interface AdminRouteChildren {
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
   AdminLocationsRoute: typeof AdminLocationsRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminPagesRoute: typeof AdminPagesRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminSalesRoute: typeof AdminSalesRoute
   AdminSeoRoute: typeof AdminSeoRoute
@@ -570,6 +630,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminIntegrationsRoute: AdminIntegrationsRoute,
   AdminLocationsRoute: AdminLocationsRoute,
   AdminOrdersRoute: AdminOrdersRoute,
+  AdminPagesRoute: AdminPagesRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminSalesRoute: AdminSalesRoute,
   AdminSeoRoute: AdminSeoRoute,
@@ -586,7 +647,9 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   BookRoute: BookRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ResultsRoute: ResultsRoute,
+  TermsRoute: TermsRoute,
   ManageTokenRoute: ManageTokenRoute,
 }
 export const routeTree = rootRouteImport

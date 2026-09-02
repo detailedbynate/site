@@ -296,6 +296,68 @@ export const removeAppointment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// --------------------- Legal pages & analytics ------------------------
+
+export const getSitePages = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const { DEFAULT_PRIVACY, DEFAULT_TERMS } = await import("../legal");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+  const s = await getSettings();
+  return {
+    // The starting drafts are sent so the editor can offer them, rather than
+    // showing an empty box next to a page that clearly has words on it.
+    privacyBody: s.privacyBody,
+    privacyUpdated: s.privacyUpdated,
+    termsBody: s.termsBody,
+    termsUpdated: s.termsUpdated,
+    defaultPrivacy: DEFAULT_PRIVACY,
+    defaultTerms: DEFAULT_TERMS,
+    analyticsScriptUrl: s.analyticsScriptUrl,
+    analyticsSiteId: s.analyticsSiteId,
+  };
+});
+
+export const saveSitePages = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      privacyBody: z.string().max(40000),
+      termsBody: z.string().max(40000),
+      analyticsScriptUrl: z
+        .string()
+        .max(300)
+        .refine((v) => !v || /^https:\/\//i.test(v), {
+          message: "The analytics script must be an https:// URL.",
+        }),
+      analyticsSiteId: z.string().max(120),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings, getSettings } = await import("../db.server");
+    const { requireRole } = await import("../auth.server");
+    await requireRole("owner");
+
+    const current = await getSettings();
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Only stamp "last updated" when the text actually changed — otherwise
+    // saving the analytics field would redate a policy nobody touched.
+    return {
+      settings: await updateSettings({
+        privacyBody: data.privacyBody,
+        privacyUpdated:
+          data.privacyBody.trim() !== current.privacyBody.trim()
+            ? today
+            : current.privacyUpdated,
+        termsBody: data.termsBody,
+        termsUpdated:
+          data.termsBody.trim() !== current.termsBody.trim() ? today : current.termsUpdated,
+        analyticsScriptUrl: data.analyticsScriptUrl.trim(),
+        analyticsSiteId: data.analyticsSiteId.trim(),
+      }),
+    };
+  });
+
 // ------------------- Deposits & cancellation policy -------------------
 
 /**

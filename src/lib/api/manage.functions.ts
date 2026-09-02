@@ -56,6 +56,12 @@ async function reconcilePayments(bookingId: string) {
 export const getManagedBooking = createServerFn({ method: "GET" })
   .inputValidator(z.object({ token: tokenSchema }))
   .handler(async ({ data }) => {
+    // The token is the only credential on these pages, so guessing is the
+    // attack. 24 random bytes is far too large to brute force, but there is
+    // no reason to answer a scanner as fast as it can ask.
+    const { rateLimit } = await import("../rate-limit.server");
+    rateLimit("manage", { max: 60, windowMs: 10 * 60_000 });
+
     const { findBookingByToken, findClientById, getSettings } = await import("../db.server");
     const { evaluateCancellation, canReschedule, describePolicy } = await import("../policy");
 

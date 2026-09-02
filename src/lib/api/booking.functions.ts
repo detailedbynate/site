@@ -174,6 +174,15 @@ export const checkCoupon = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    // Codes are short and guessable, and this endpoint says plainly whether
+    // one is real. Without a limit a script can enumerate every live code.
+    const { rateLimit } = await import("../rate-limit.server");
+    rateLimit("coupon", {
+      max: 20,
+      windowMs: 10 * 60_000,
+      message: "Too many code attempts. Please wait a few minutes and try again.",
+    });
+
     // Price the order server-side; a client-supplied subtotal could be forged
     // to inflate a percentage discount.
     const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location);
@@ -221,6 +230,16 @@ export const createBooking = createServerFn({ method: "POST" })
       }),
   )
   .handler(async ({ data }) => {
+    // Each booking writes a row, sends an email and creates a calendar event,
+    // so a loop costs real money and fills a real calendar. Generous enough
+    // that a family booking several cars in one sitting never notices.
+    const { rateLimit } = await import("../rate-limit.server");
+    rateLimit("booking", {
+      max: 6,
+      windowMs: 30 * 60_000,
+      message: "That's a lot of bookings at once. Please call us and we'll sort the rest out.",
+    });
+
     const { getAvailableSlots } = await import("../availability.server");
     const { findOrCreateClient, addBooking } = await import("../db.server");
     const { createCalendarEvent } = await import("../google-calendar.server");
@@ -416,6 +435,10 @@ export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () =>
     twitterHandle: s.twitterHandle,
     siteUrl: s.siteUrl,
     businessName: s.businessName,
+    // Cookieless analytics only — see the settings comment. Sent to the
+    // browser on purpose: it is a public script tag either way.
+    analyticsScriptUrl: s.analyticsScriptUrl,
+    analyticsSiteId: s.analyticsSiteId,
   };
 });
 
