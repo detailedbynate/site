@@ -3,6 +3,52 @@ import { ImageUp, Loader2 } from "lucide-react";
 
 import { uploadBrandingImage } from "@/lib/api/admin.functions";
 
+/** Target size per slot. A logo must be square; a share image is 1.91:1. */
+const TARGET = {
+  favicon: { w: 512, h: 512 },
+  emailLogo: { w: 512, h: 512 },
+  ogImage: { w: 1200, h: 630 },
+} as const;
+
+/**
+ * Resize the chosen file to the right shape before uploading.
+ *
+ * Phone cameras and logo exports run to several megabytes and arbitrary
+ * dimensions; an app icon needs to be square and small. The image is fitted
+ * INSIDE the target rather than stretched to fill it, so a wide wordmark
+ * keeps its proportions instead of being squashed into a square — it just
+ * gets transparent space above and below.
+ *
+ * Done in the browser so a large original never crosses the network, and so
+ * the server keeps one small file rather than the 8MP version.
+ */
+async function normalise(
+  file: File,
+  slot: keyof typeof TARGET,
+): Promise<{ base64: string; mime: string }> {
+  const { w, h } = TARGET[slot];
+  const bitmap = await createImageBitmap(file);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Couldn't process that image.");
+
+  // Contain: scale to fit, centre what is left over.
+  const scale = Math.min(w / bitmap.width, h / bitmap.height);
+  const dw = Math.round(bitmap.width * scale);
+  const dh = Math.round(bitmap.height * scale);
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, Math.round((w - dw) / 2), Math.round((h - dh) / 2), dw, dh);
+  bitmap.close?.();
+
+  // PNG throughout: it keeps transparency, which a logo usually depends on,
+  // and at icon sizes the file is small either way.
+  const dataUrl = canvas.toDataURL("image/png");
+  return { base64: dataUrl.split(",")[1] ?? "", mime: "image/png" };
+}
+
 /**
  * Upload a branding image and get back a URL on this domain.
  *
@@ -29,16 +75,8 @@ export function BrandingUpload({
     setBusy(true);
     setError(null);
     try {
-      // Read as base64 — the same path the other uploads in this admin use,
-      // so there is one upload mechanism rather than two.
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("Couldn't read that file."));
-        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-        reader.readAsDataURL(file);
-      });
-
-      const res = await uploadBrandingImage({ data: { slot, mime: file.type, base64 } });
+      const { base64, mime } = await normalise(file, slot);
+      const res = await uploadBrandingImage({ data: { slot, mime, base64 } });
       onUploaded(res.url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed.");

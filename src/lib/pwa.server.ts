@@ -117,8 +117,14 @@ export async function pwaResponse(url: URL): Promise<Response | null> {
   const settings = await getSettings().catch(() => null);
   const name = settings?.businessName?.trim() || "Shop admin";
 
-  const logo = settings?.faviconUrl?.trim();
-  const hasLogo = Boolean(logo && /^https?:\/\//i.test(logo));
+  const logo = settings?.faviconUrl?.trim() ?? "";
+  // Both forms count: an uploaded image is a same-origin /img/<id> path, and
+  // a pasted one is an absolute URL. Accepting only absolute URLs meant an
+  // uploaded logo silently fell back to the drawn icon — which on iOS shows
+  // up as a generated letter tile, i.e. exactly the thing uploading was
+  // meant to fix.
+  const ownImage = /^\/img\/[0-9a-f-]{36}$/i.test(logo);
+  const hasLogo = ownImage || /^https?:\/\//i.test(logo);
 
   /*
     One stable icon URL.
@@ -131,10 +137,17 @@ export async function pwaResponse(url: URL): Promise<Response | null> {
     the installed app showing a blank square.
   */
   if (isIcon) {
-    if (hasLogo) {
+    // Our own image: serve the bytes here rather than redirecting. iOS is
+    // unreliable about following redirects when fetching a home-screen icon,
+    // and this is the one request that must not fail.
+    if (ownImage) {
+      const served = await brandingImageResponse(new URL(logo, url.origin));
+      if (served) return served;
+    }
+    if (hasLogo && !ownImage) {
       return new Response(null, {
         status: 302,
-        headers: { location: logo!, "cache-control": "public, max-age=300" },
+        headers: { location: logo, "cache-control": "public, max-age=300" },
       });
     }
     return new Response(iconSvg(name), {
