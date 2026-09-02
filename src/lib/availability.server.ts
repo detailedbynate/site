@@ -128,10 +128,28 @@ export async function getAvailableSlots(
     listBookingsForDate(date),
   ]);
 
+  /*
+    Convert each Google busy block to minutes from the START OF THIS DAY, then
+    clamp it to the day.
+
+    This used to read the clock time out of each timestamp and throw the date
+    away, which silently broke the most common case of all. An all-day event
+    runs 00:00 -> next day 00:00, so it became 0 -> 0: a zero-width range that
+    blocked nothing. Multi-day events collapsed the same way, and anything
+    running past midnight came out negative. Only a plain same-day timed event
+    ever worked, which is why marking a day off in Google did nothing here.
+
+    Measuring against dayStartISO (already the zoned midnight as an instant)
+    needs no timezone maths and handles DST for free, because both sides are
+    real instants.
+  */
+  const dayStartMs = new Date(dayStartISO).getTime();
+  const offsetMinutes = (iso: string) => (new Date(iso).getTime() - dayStartMs) / 60_000;
+
   const busyRangesMin: TimeRange[] = [
     ...googleBusy.map((b) => ({
-      startMinutes: minutesFromZonedISO(b.start, cfg.timezone),
-      endMinutes: minutesFromZonedISO(b.end, cfg.timezone),
+      startMinutes: Math.max(0, offsetMinutes(b.start)),
+      endMinutes: Math.min(24 * 60, offsetMinutes(b.end)),
     })),
     ...localBookings
       .filter((b) => b.id !== ignoreBookingId)
@@ -143,7 +161,10 @@ export async function getAvailableSlots(
 
   const slots: SlotResult[] = [];
   const now = new Date();
-  const isToday = new Date(dayStartISO).toDateString() === new Date().toDateString();
+  // Compare dates in the BUSINESS timezone. Comparing the server's local date
+  // meant a UTC host (as on Railway) disagreed about which day "today" is for
+  // several hours each evening.
+  const isToday = date === todayInZone(cfg.timezone);
 
   for (let start = openMin; start + durationMinutes <= closeMin; start += step) {
     const end = start + durationMinutes;
@@ -250,16 +271,3 @@ export async function getAvailableDays(
   return days;
 }
 
-function minutesFromZonedISO(iso: string, timeZone: string): number {
-  const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const parts = dtf.formatToParts(new Date(iso)).reduce<Record<string, string>>((acc, p) => {
-    acc[p.type] = p.value;
-    return acc;
-  }, {});
-  return Number(parts.hour) * 60 + Number(parts.minute);
-}

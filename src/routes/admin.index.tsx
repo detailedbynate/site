@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
   ArrowUpRight,
   CalendarCheck,
+  RefreshCw,
   CalendarClock,
   CheckCircle2,
   DollarSign,
@@ -12,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 
-import { getDashboard } from "@/lib/api/admin.functions";
+import { getDashboard, getIntegrations, testGoogleConnection } from "@/lib/api/admin.functions";
 import { TabBar } from "@/components/admin/TabBar";
 import {
   ChartModeToggle,
@@ -20,6 +21,7 @@ import {
   type ChartMode,
 } from "@/components/admin/RevenueChart";
 import {
+  Button,
   EmptyState,
   ErrorNote,
   GlassCard,
@@ -215,6 +217,8 @@ function Dashboard() {
           icon={Users}
         />
       </div>
+
+      <CalendarStatusCard />
 
       <div className="mt-6 grid gap-5 lg:grid-cols-3">
         {/* Revenue chart */}
@@ -430,5 +434,134 @@ function Gauge({ percent }: { percent: number }) {
         </motion.p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Calendar sync status, on the Dashboard.
+ *
+ * Sync failures are non-fatal by design, so nothing about a broken connection
+ * is visible while you work — you find out when a customer books over a day
+ * you were away. This puts the state, the last error, and a Test button on
+ * the page you actually look at.
+ */
+function CalendarStatusCard() {
+  const [data, setData] = useState<{
+    connected: boolean;
+    calendarId: string;
+    accountEmail: string;
+    lastError: string;
+    lastErrorAt: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await getIntegrations();
+      setData({
+        connected: res.google.connected,
+        calendarId: res.google.calendarId,
+        accountEmail: res.google.accountEmail,
+        lastError: res.google.lastError,
+        lastErrorAt: res.google.lastErrorAt,
+      });
+    } catch {
+      setData(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (!data) return null;
+
+  const healthy = data.connected && !data.lastError;
+
+  return (
+    <GlassCard index={8} className="mt-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+              healthy
+                ? "bg-emerald-400/12"
+                : data.connected
+                  ? "bg-amber-400/12"
+                  : "bg-[var(--fill-2)]"
+            }`}
+          >
+            <CalendarCheck
+              className={`h-4 w-4 ${
+                healthy
+                  ? "text-emerald-300"
+                  : data.connected
+                    ? "text-amber-300"
+                    : "text-muted-foreground"
+              }`}
+            />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[14px] font-semibold tracking-tight text-foreground">
+              Calendar sync
+            </p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              {!data.connected
+                ? "Not connected — bookings aren't reaching Google, and busy days aren't blocked."
+                : healthy
+                  ? `Syncing with ${data.accountEmail || data.calendarId}.`
+                  : data.lastError}
+            </p>
+            {data.connected && !healthy && data.lastErrorAt && (
+              <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                {new Date(data.lastErrorAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {data.connected && (
+            <Button
+              size="sm"
+              loading={busy}
+              onClick={async () => {
+                setBusy(true);
+                setResult(null);
+                try {
+                  setResult(await testGoogleConnection());
+                } catch (e) {
+                  setResult({
+                    ok: false,
+                    detail: e instanceof Error ? e.message : "Test failed.",
+                  });
+                } finally {
+                  setBusy(false);
+                  await load();
+                }
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Test
+            </Button>
+          )}
+          <Link to="/admin/integrations">
+            <Button size="sm" variant={data.connected ? "outline" : "primary"}>
+              {data.connected ? "Manage" : "Connect"} <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {result && (
+        <p
+          className={`mt-3 text-[12.5px] font-semibold ${
+            result.ok ? "text-emerald-300" : "text-destructive"
+          }`}
+        >
+          {result.detail}
+        </p>
+      )}
+    </GlassCard>
   );
 }

@@ -40,7 +40,7 @@ export const Route = createFileRoute("/")({
         gallery: gallery.pairs,
         reviews: reviews.testimonials,
         faqs: faq.faqs,
-        heroUrl: hero.url,
+        hero,
       };
     } catch {
       return {
@@ -49,7 +49,7 @@ export const Route = createFileRoute("/")({
         gallery: [],
         reviews: [],
         faqs: [],
-        heroUrl: null,
+        hero: null,
       };
     }
   },
@@ -140,8 +140,16 @@ function Index() {
     gallery,
     reviews: liveReviews,
     faqs: liveFaqs,
-    heroUrl,
+    hero,
   } = Route.useLoaderData();
+  // Hero copy and the counters are editable in SEO & branding. The literals
+  // here are only a fallback for a fresh install.
+  const heroUrl = hero?.url ?? null;
+  const heroHeadline = hero?.headline || "Make your car";
+  const heroAccent = hero?.headlineAccent || "look untouchable.";
+  const heroSubtext =
+    hero?.subtext ||
+    "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.";
   // Both editable in the admin; the bundled versions are only a fallback for
   // a fresh install whose tables somehow came back empty.
   const faqs = liveFaqs?.length ? liveFaqs : fallbackFaqs;
@@ -236,11 +244,11 @@ function Index() {
               Now booking — Summer detail season
             </div>
             <h1 className="font-helvetica font-bold tracking-[-0.04em] leading-[0.92] text-[clamp(3rem,9vw,8.5rem)] mb-8">
-              <span className="block text-foreground">Make your car</span>
-              <span className="block text-primary glow-text">look untouchable.</span>
+              <span className="block text-foreground">{heroHeadline}</span>
+              <span className="block text-primary glow-text">{heroAccent}</span>
             </h1>
             <p className="text-base md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
-              Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.
+              {heroSubtext}
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <motion.button
@@ -265,9 +273,9 @@ function Index() {
             {/* Stat pills */}
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
               {[
-                { value: 150, suffix: "+", label: "clients served" },
+                { value: hero?.statClients ?? 150, suffix: "+", label: "clients served" },
                 { value: 5, suffix: ".0", label: "star rating", stars: true },
-                { value: 1200, suffix: "+", label: "vehicles detailed" },
+                { value: hero?.statVehicles ?? 200, suffix: "+", label: "vehicles detailed" },
               ].map((s, i) => (
                 <motion.div
                   key={i}

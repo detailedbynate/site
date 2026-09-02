@@ -200,6 +200,16 @@ export interface Settings {
   faviconUrl: string;
   /** Row id in `photos` for the homepage hero background. Blank = bundled. */
   heroPhotoId: string;
+  /**
+   * The headline over the hero. Split in two so the second half keeps the
+   * accent colour it has in the design.
+   */
+  heroHeadline: string;
+  heroHeadlineAccent: string;
+  heroSubtext: string;
+  /** The three counters under the hero. Rating is fixed at 5.0. */
+  statClients: number;
+  statVehicles: number;
   twitterHandle: string;
 
   // --- Calendar event templates ({{vars}}, same set as emails) ---
@@ -497,6 +507,12 @@ export const DEFAULT_SETTINGS: Settings = {
   ogImageUrl: "",
   faviconUrl: "",
   heroPhotoId: "",
+  heroHeadline: "Make your car",
+  heroHeadlineAccent: "look untouchable.",
+  heroSubtext:
+    "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.",
+  statClients: 150,
+  statVehicles: 200,
   twitterHandle: "",
   calendarEventTitle: "{{service}} — {{fullName}}",
   calendarEventDescription: `Service: {{service}}

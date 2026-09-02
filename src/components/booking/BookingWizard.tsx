@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowLeft,
@@ -126,6 +126,7 @@ export function BookingWizard({
   } | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeBusy, setCodeBusy] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // The catalog is editable from /admin/services, so it's fetched rather
   // than imported — prices and packages can change without a redeploy.
@@ -258,10 +259,52 @@ export function BookingWizard({
     return null;
   };
 
+  /*
+    Bring the top of the wizard back into view when the step changes.
+
+    Steps differ a lot in height — Add-ons is a long list, Location is two
+    cards — so advancing from a tall step to a short one (or the reverse) left
+    the page scrolled into the middle of the new step, or below it entirely.
+    On a phone that reads as the panel "jumping", with the heading and the
+    progress bar somewhere off-screen above.
+
+    Phones only: on a desktop the whole wizard is usually visible at once and
+    stealing the scroll position would be more disruptive than helpful.
+  */
+  const scrollToTopOnMobile = () => {
+    const node = rootRef.current;
+    if (!node || typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 768px)").matches) return;
+
+    const header = 64; // sticky site nav
+    const top = node.getBoundingClientRect().top + window.scrollY - header;
+    // Never scroll downward to reach it; only pull the view back up.
+    if (top < window.scrollY) {
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    }
+  };
+
+  // Runs after the new step is in the DOM, so the panel's height is the new
+  // one. Deliberately an effect rather than a requestAnimationFrame callback:
+  // rAF doesn't fire while a tab isn't painting, which would silently skip the
+  // scroll. Skipped on mount so opening the wizard never moves the page.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    scrollToTopOnMobile();
+    // scrollToTopOnMobile only reads refs and window, so step is the real input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   const go = (next: number) => {
     setNotice(null);
     setDir(next > step ? 1 : -1);
     setStep(Math.max(0, Math.min(STEPS.length - 1, next)));
+    // The scroll itself happens in the effect below, once React has committed
+    // the new step and the panel has its new height.
   };
 
   const submit = async () => {
@@ -350,10 +393,15 @@ export function BookingWizard({
   };
 
   return (
-    <div className="glass-strong sheen relative w-full rounded-4xl p-5 sm:p-8">
+    <div ref={rootRef} className="glass-strong sheen relative w-full rounded-4xl p-5 sm:p-8">
       <StepProgress steps={STEPS} current={step} />
 
-      <div className="relative mt-8 min-h-[420px]">
+      {/*
+        A shorter floor on phones. The 420px minimum was sized for desktop; on
+        a small screen it padded short steps with empty space, which pushed the
+        Next button below the fold and made the panel look like it had grown.
+      */}
+      <div className="relative mt-8 min-h-[280px] sm:min-h-[420px]">
         <AnimatePresence mode="wait" custom={dir} initial={false}>
           <motion.div
             key={step}

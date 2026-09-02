@@ -276,14 +276,28 @@ export const clearHeroImage = createServerFn({ method: "POST" }).handler(async (
   return { ok: true };
 });
 
-/** The current hero, as a data URL. Null means "use the bundled image". */
+/**
+ * Everything the homepage hero needs: the background, the headline, and the
+ * counters. One call so the loader isn't making four round trips for one
+ * section. Public — no auth.
+ */
 export const getHeroImage = createServerFn({ method: "GET" }).handler(async () => {
   const { getSettings, findPhoto } = await import("../db.server");
   const { readPhotoDataUrl } = await import("../uploads.server");
 
-  const { heroPhotoId } = await getSettings();
-  if (!heroPhotoId) return { url: null as string | null };
-  const photo = await findPhoto(heroPhotoId);
-  if (!photo) return { url: null as string | null };
-  return { url: await readPhotoDataUrl(photo.id, photo.mime) };
+  const s = await getSettings();
+  let url: string | null = null;
+  if (s.heroPhotoId) {
+    const photo = await findPhoto(s.heroPhotoId);
+    if (photo) url = await readPhotoDataUrl(photo.id, photo.mime);
+  }
+
+  return {
+    url,
+    headline: s.heroHeadline,
+    headlineAccent: s.heroHeadlineAccent,
+    subtext: s.heroSubtext,
+    statClients: s.statClients,
+    statVehicles: s.statVehicles,
+  };
 });

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Globe, Image as ImageIcon, Images, Plus, Search, Trash2, Upload } from "lucide-react";
+import { Globe, Image as ImageIcon, Images, Plus, Search, Trash2, Type, Upload } from "lucide-react";
 
 import {
   getAdminSettings,
@@ -86,6 +86,11 @@ function Seo() {
           ogImageUrl: s.ogImageUrl,
           faviconUrl: s.faviconUrl,
           twitterHandle: s.twitterHandle,
+          heroHeadline: s.heroHeadline,
+          heroHeadlineAccent: s.heroHeadlineAccent,
+          heroSubtext: s.heroSubtext,
+          statClients: s.statClients,
+          statVehicles: s.statVehicles,
         },
       });
       setS(res.settings);
@@ -267,6 +272,82 @@ function Seo() {
           </div>
         </GlassCard>
       </div>
+
+      {/* Hero wording, next to the hero image it sits on top of. */}
+      <GlassCard index={2} className="mt-5 p-6">
+        <div className="flex items-center gap-2.5">
+          <Type className="h-4 w-4 text-primary" />
+          <p className="text-[15px] font-semibold tracking-tight text-foreground">
+            Homepage headline
+          </p>
+        </div>
+        <p className="mt-1 text-[12.5px] text-muted-foreground">
+          The big text customers land on. The second line keeps the accent colour.
+        </p>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <Field label="Headline, first line">
+            <input
+              className={inputCls}
+              value={s.heroHeadline}
+              maxLength={80}
+              onChange={(e) => set("heroHeadline", e.target.value)}
+            />
+          </Field>
+          <Field label="Headline, second line" hint="Shown in your accent colour.">
+            <input
+              className={inputCls}
+              value={s.heroHeadlineAccent}
+              maxLength={80}
+              onChange={(e) => set("heroHeadlineAccent", e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4">
+          <Field label="Description underneath">
+            <textarea
+              className={`${inputCls} min-h-[80px] resize-y`}
+              value={s.heroSubtext}
+              maxLength={400}
+              onChange={(e) => set("heroSubtext", e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Clients served" hint="The counter that animates up.">
+            <input
+              className={inputCls}
+              type="number"
+              min={0}
+              value={s.statClients}
+              onChange={(e) => set("statClients", Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Vehicles detailed">
+            <input
+              className={inputCls}
+              type="number"
+              min={0}
+              value={s.statVehicles}
+              onChange={(e) => set("statVehicles", Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Preview
+          </p>
+          <p className="text-[22px] font-bold leading-tight tracking-tight text-foreground">
+            {s.heroHeadline}
+            <br />
+            <span className="text-primary">{s.heroHeadlineAccent}</span>
+          </p>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">{s.heroSubtext}</p>
+        </div>
+      </GlassCard>
 
       <HeroImageCard onOk={flash} onError={setError} />
 

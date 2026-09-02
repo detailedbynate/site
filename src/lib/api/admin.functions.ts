@@ -1196,6 +1196,12 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
       ogImageUrl: z.string().max(500),
       faviconUrl: z.string().max(500),
       twitterHandle: z.string().max(40),
+      // Homepage hero copy and the counters beneath it.
+      heroHeadline: z.string().max(80),
+      heroHeadlineAccent: z.string().max(80),
+      heroSubtext: z.string().max(400),
+      statClients: z.number().int().min(0).max(1000000),
+      statVehicles: z.number().int().min(0).max(1000000),
     }),
   )
   .handler(async ({ data }) => {
