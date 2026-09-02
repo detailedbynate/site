@@ -173,6 +173,19 @@ export interface Settings {
   bookingWindowDays: number;
   travelFee: number;
   /**
+   * Dead time kept either side of anything already on the day — a booked job,
+   * a Google Calendar event, or a block of time off. Pack-up, travel and
+   * setup: without it the form would offer a slot starting the minute the
+   * previous thing ends.
+   */
+  bufferMinutes: number;
+  /**
+   * Hard cap on jobs accepted per day, whatever the clock says. 0 = no cap.
+   * Slot maths alone will happily sell four details in a day that you only
+   * want to do two in.
+   */
+  maxJobsPerDay: number;
+  /**
    * Base weekly hours — the schedule BEFORE Google Calendar busy blocks and
    * existing bookings are subtracted. This is the source of truth for what
    * you are open; Calendar only ever removes time from it, never adds.
@@ -480,6 +493,8 @@ export const DEFAULT_SETTINGS: Settings = {
   contactPhone: "(555) 123-4567",
   serviceArea: "Sault Ste. Marie area",
   timezone: process.env.BUSINESS_TIMEZONE ?? "America/Toronto",
+  bufferMinutes: Number(process.env.BOOKING_BUFFER_MINUTES ?? 30),
+  maxJobsPerDay: Number(process.env.BOOKING_MAX_PER_DAY ?? 0),
   openHour: Number(process.env.BUSINESS_OPEN_HOUR ?? 8),
   closeHour: Number(process.env.BUSINESS_CLOSE_HOUR ?? 18),
   slotIncrementMinutes: Number(process.env.SLOT_INCREMENT_MINUTES ?? 30),

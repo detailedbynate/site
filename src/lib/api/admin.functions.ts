@@ -518,6 +518,8 @@ export const saveSettings = createServerFn({ method: "POST" })
         closedDays: z.array(z.number().int().min(0).max(6)).max(7),
         bookingWindowDays: z.number().int().min(1).max(120),
         travelFee: z.number().int().min(0).max(10000),
+        bufferMinutes: z.number().int().min(0).max(240),
+        maxJobsPerDay: z.number().int().min(0).max(50),
       })
       .refine((s) => s.closeHour > s.openHour, {
         message: "Closing time must be after opening time.",
@@ -898,6 +900,8 @@ export const saveSchedule = createServerFn({ method: "POST" })
       slotIncrementMinutes: z.number().int().min(15).max(240),
       leadDays: z.number().int().min(0).max(60),
       bookingWindowDays: z.number().int().min(1).max(120),
+      bufferMinutes: z.number().int().min(0).max(240),
+      maxJobsPerDay: z.number().int().min(0).max(50),
     }),
   )
   .handler(async ({ data }) => {

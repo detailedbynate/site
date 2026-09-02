@@ -151,6 +151,8 @@ export function ScheduleCard() {
           slotIncrementMinutes: s.slotIncrementMinutes,
           leadDays: s.leadDays,
           bookingWindowDays: s.bookingWindowDays,
+          bufferMinutes: s.bufferMinutes,
+          maxJobsPerDay: s.maxJobsPerDay,
         },
       });
       setS(res.settings);
@@ -279,6 +281,28 @@ export function ScheduleCard() {
             min={1}
             value={s.bookingWindowDays}
             onChange={(e) => setS({ ...s, bookingWindowDays: Number(e.target.value) })}
+          />
+        </Field>
+        <Field
+          label="Gap between jobs (minutes)"
+          hint="Kept clear either side of every job, calendar event and block of time off — pack-up, travel and setup."
+        >
+          <input
+            className={inputCls}
+            type="number"
+            min={0}
+            step={15}
+            value={s.bufferMinutes}
+            onChange={(e) => setS({ ...s, bufferMinutes: Number(e.target.value) })}
+          />
+        </Field>
+        <Field label="Max jobs per day" hint="0 = no limit. A hard cap, whatever the clock allows.">
+          <input
+            className={inputCls}
+            type="number"
+            min={0}
+            value={s.maxJobsPerDay}
+            onChange={(e) => setS({ ...s, maxJobsPerDay: Number(e.target.value) })}
           />
         </Field>
       </div>

@@ -156,6 +156,18 @@ export async function getAvailableSlots(
     prefetchedTimeOff ?? listTimeOffBetween(date, date),
   ]);
 
+  /*
+    Hard cap on jobs per day. Checked against bookings that are still live,
+    and never counts the booking being rescheduled against itself — moving a
+    job within a full day would otherwise be impossible.
+  */
+  const cap = Math.max(0, cfg.maxJobsPerDay ?? 0);
+  if (cap > 0) {
+    // listBookingsForDate already excludes cancelled jobs.
+    const taken = localBookings.filter((b) => b.id !== ignoreBookingId).length;
+    if (taken >= cap) return [];
+  }
+
   // When rescheduling, skip the calendar event this booking already created.
   // The local booking is excluded below via ignoreBookingId; without this its
   // Google twin would still block, so a job could never move within its own
@@ -212,9 +224,22 @@ export async function getAvailableSlots(
 
   const slots: SlotResult[] = [];
 
+  /*
+    Pad every busy range by the buffer on BOTH sides.
+
+    Doing it here rather than lengthening the job means the gap is kept
+    around whatever is already on the day — a booked job, a calendar event,
+    a block of time off — without inflating the duration written to the
+    calendar or charged for. A 90 minute detail stays 90 minutes; it just
+    can't start inside the buffer of something else.
+  */
+  const buffer = Math.max(0, cfg.bufferMinutes ?? 0);
+
   for (let start = openMin; start + durationMinutes <= closeMin; start += step) {
     const end = start + durationMinutes;
-    const overlaps = busyRangesMin.some((r) => start < r.endMinutes && end > r.startMinutes);
+    const overlaps = busyRangesMin.some(
+      (r) => start < r.endMinutes + buffer && end > r.startMinutes - buffer,
+    );
     if (overlaps) continue;
 
     const startISO = zonedTimeToISO(date, start, cfg.timezone);
