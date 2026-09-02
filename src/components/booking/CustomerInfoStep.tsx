@@ -45,7 +45,7 @@ export function validateCustomer(c: CustomerInfo): CustomerErrors {
 }
 
 const inputCls =
-  "mt-1.5 w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/15";
+  "mt-1 w-full rounded-2xl border border-border bg-card px-4 py-2.5 text-sm text-foreground sm:mt-1.5 sm:py-3 outline-none transition placeholder:text-muted-foreground/60 focus:border-primary focus:ring-4 focus:ring-primary/15";
 
 function Field({
   label,
@@ -83,16 +83,16 @@ type Props = {
 
 export function CustomerInfoStep({ value, errors, onChange }: Props) {
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-3.5 sm:gap-5">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass rounded-3xl p-5"
+        className="glass rounded-3xl p-4 sm:p-5"
       >
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
           <User className="h-3.5 w-3.5" /> Contact
         </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4 sm:grid-cols-3">
           <Field label="Full name" error={errors.name}>
             <input
               className={inputCls}
@@ -131,12 +131,12 @@ export function CustomerInfoStep({ value, errors, onChange }: Props) {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0, transition: { delay: 0.06 } }}
-        className="glass rounded-3xl p-5"
+        className="glass rounded-3xl p-4 sm:p-5"
       >
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
           <Car className="h-3.5 w-3.5" /> Vehicle
         </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-4">
+        <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4 sm:grid-cols-4">
           <Field label="Make" error={errors.make}>
             <input
               className={inputCls}

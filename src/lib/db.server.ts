@@ -722,6 +722,48 @@ export const DEFAULT_FAQS: Omit<Faq, "createdAt">[] = [
   },
 ];
 
+/*
+  Wording these built-in emails USED to ship with.
+
+  Seeding only ever fills an empty table, so a shop created before a template
+  changed keeps the old copy forever. Anything here is a body the owner never
+  touched, so replacing it loses nothing — and it is matched exactly, so a
+  single edited character means it is left well alone.
+*/
+const SUPERSEDED_EMAIL_BODIES: Record<string, string[]> = {
+  booking_confirmed: [
+    `Hi {{name}},
+
+You're all set for your {{service}} detail.
+
+When: {{date}} at {{time}}
+Where: {{location}}
+Vehicle: {{vehicle}}
+Total: {{total}}
+Reference: {{reference}}
+
+Reply to this email if anything changes.
+
+— {{business}}`,
+    `Hi {{name}},
+
+You're all set for your {{service}} detail.
+
+When: {{date}} at {{time}}
+Where: {{location}}
+Vehicle: {{vehicle}}
+Total: {{total}}
+Reference: {{reference}}
+
+Need to change or cancel? Use your booking link:
+{{manageLink}}
+
+{{policy}}
+
+— {{business}}`,
+  ],
+};
+
 export const DEFAULT_EMAIL_RULES: EmailRule[] = [
   {
     id: "booking_confirmed",
@@ -1234,6 +1276,28 @@ function seedIfEmpty(): void {
         ).run(r.id, r.trigger ?? null, r.name ?? null, r.enabled ? 1 : 0, r.subject, r.body, r.offsetHours, i);
       }
     }
+    /*
+      Bring untouched built-in emails up to the current wording.
+
+      Without this the confirmation email on any existing shop would never
+      gain the booking summary card, because defaults only seed an empty
+      table. Only bodies that exactly match a version we shipped are replaced.
+    */
+    for (const rule of DEFAULT_EMAIL_RULES) {
+      const old = SUPERSEDED_EMAIL_BODIES[rule.id];
+      if (!old?.length) continue;
+      const row = d
+        .prepare("SELECT body FROM emailRules WHERE id = ? AND custom = 0")
+        .get(rule.id) as { body?: string } | undefined;
+      if (row?.body && old.includes(row.body)) {
+        d.prepare("UPDATE emailRules SET body = ?, subject = ? WHERE id = ?").run(
+          rule.body,
+          rule.subject,
+          rule.id,
+        );
+      }
+    }
+
     if (tableIsEmpty("settings")) {
       writeSettingsRows(DEFAULT_SETTINGS as unknown as Record<string, unknown>);
     }

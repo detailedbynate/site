@@ -109,8 +109,18 @@ function shell(opts: {
   logoUrl: string;
   footer: string;
 }): string {
+  /*
+    Mail clients block remote images by default for a sender they don't know
+    yet, so the header has to survive the logo never loading. The alt text is
+    styled to read as the wordmark in that case, rather than as a broken
+    image, and the explicit height stops the layout jumping when the reader
+    does choose to load it.
+
+    (Whether images are blocked at all is a DNS question — SPF, DKIM and
+    DMARC on the sending domain — not something markup can fix.)
+  */
   const header = /^https:\/\//i.test(opts.logoUrl)
-    ? `<img src="${escapeHtml(opts.logoUrl)}" alt="${escapeHtml(opts.businessName)}" height="44" style="height:44px;max-width:220px;display:block;border:0">`
+    ? `<img src="${escapeHtml(opts.logoUrl)}" alt="${escapeHtml(opts.businessName)}" height="44" style="height:44px;max-width:220px;display:block;border:0;font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.02em;text-decoration:none">`
     : `<span style="font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.02em">${escapeHtml(opts.businessName)}</span>`;
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(opts.businessName)}</title></head><body style="margin:0;padding:0;background:#f3f4f6"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6"><tr><td align="center" style="padding:28px 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"><tr><td style="padding:26px 28px 20px;border-bottom:1px solid #f0f1f3">${header}</td></tr><tr><td style="padding:26px 28px 10px">${opts.bodyHtml}</td></tr><tr><td style="padding:18px 28px 26px;border-top:1px solid #f0f1f3;color:#9ca3af;font-size:12px;line-height:1.6">${opts.footer}</td></tr></table></td></tr></table></body></html>`;

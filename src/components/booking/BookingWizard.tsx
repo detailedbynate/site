@@ -91,6 +91,29 @@ function SelectRing({ selected }: { selected: boolean }) {
   );
 }
 
+/**
+ * The nearest ancestor that actually scrolls, or null when the page itself
+ * is the scroller.
+ *
+ * Checked against scrollHeight as well as the computed overflow: a container
+ * declared `overflow-y: auto` that isn't overflowing scrolls nothing, and
+ * scrolling it instead of the page would silently do nothing.
+ */
+function scrollParentOf(node: HTMLElement): HTMLElement | null {
+  let el = node.parentElement;
+  while (el && el !== document.body && el !== document.documentElement) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      el.scrollHeight > el.clientHeight + 1
+    ) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export function BookingWizard({
   onDone,
   initialServiceId,
@@ -277,11 +300,39 @@ export function BookingWizard({
     if (!node || typeof window === "undefined") return;
     if (window.matchMedia("(min-width: 768px)").matches) return;
 
+    /*
+      Scroll whatever actually scrolls.
+
+      Opened from a "Book Now" button the wizard lives inside the modal, which
+      is `fixed inset-0 overflow-y-auto` with the body locked — so the page
+      does not scroll at all and window.scrollTo() is a no-op. That is the
+      common case, which is why this appeared not to work: the panel stayed
+      where it was, and the customer filled in a step without realising more
+      fields were sitting off-screen above.
+    */
+    // Someone who has asked for less motion gets the jump, not the glide.
+    const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches
+      ? "auto"
+      : "smooth";
+
+    const scroller = scrollParentOf(node);
+
+    if (scroller) {
+      const top =
+        node.getBoundingClientRect().top - scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
+      if (top < scroller.scrollTop) {
+        scroller.scrollTo({ top: Math.max(0, top - 12), behavior });
+      }
+      return;
+    }
+
     const header = 64; // sticky site nav
     const top = node.getBoundingClientRect().top + window.scrollY - header;
     // Never scroll downward to reach it; only pull the view back up.
     if (top < window.scrollY) {
-      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      window.scrollTo({ top: Math.max(0, top), behavior });
     }
   };
 
@@ -397,7 +448,7 @@ export function BookingWizard({
   };
 
   return (
-    <div ref={rootRef} className="glass-strong sheen relative w-full rounded-4xl p-5 sm:p-8">
+    <div ref={rootRef} className="glass-strong sheen relative w-full rounded-4xl p-4 sm:p-8">
       <StepProgress steps={STEPS} current={step} />
 
       {/*
@@ -405,7 +456,7 @@ export function BookingWizard({
         a small screen it padded short steps with empty space, which pushed the
         Next button below the fold and made the panel look like it had grown.
       */}
-      <div className="relative mt-8 min-h-[280px] sm:min-h-[420px]">
+      <div className="relative mt-5 min-h-[240px] sm:mt-8 sm:min-h-[420px]">
         <AnimatePresence mode="wait" custom={dir} initial={false}>
           <motion.div
             key={step}
@@ -423,7 +474,7 @@ export function BookingWizard({
             )}
 
             {step === 0 && !catalog && !catalogError && (
-              <div className="grid gap-4" aria-busy="true">
+              <div className="grid gap-3 sm:gap-4" aria-busy="true">
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="glass h-28 animate-pulse rounded-3xl" />
                 ))}
@@ -431,7 +482,7 @@ export function BookingWizard({
             )}
 
             {step === 0 && catalog && (
-              <div className="grid gap-4">
+              <div className="grid gap-3 sm:gap-4">
                 {services.map((s, i) => {
                   const selected = service === s.id;
                   return (
@@ -511,8 +562,8 @@ export function BookingWizard({
             )}
 
             {step === 2 && (
-              <div className="grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-3 sm:gap-4">
+                <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
                   {(
                     [
                       {
@@ -624,7 +675,7 @@ export function BookingWizard({
                     <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                       A few more details
                     </p>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="mt-3 grid gap-3 sm:mt-4 sm:gap-4 sm:grid-cols-2">
                       {activeFields.map((f) => (
                         <CustomFieldInput
                           key={f.id}
@@ -641,7 +692,7 @@ export function BookingWizard({
             )}
 
             {step === 5 && (
-              <div className="grid gap-4">
+              <div className="grid gap-3 sm:gap-4">
                 <motion.div
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -817,7 +868,7 @@ export function BookingWizard({
         )}
       </AnimatePresence>
 
-      <div className="mt-8 flex items-center justify-between gap-3">
+      <div className="mt-6 flex items-center justify-between gap-3 sm:mt-8">
         <motion.button
           type="button"
           whileHover={{ x: -3 }}
