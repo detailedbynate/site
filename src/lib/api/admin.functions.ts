@@ -852,6 +852,8 @@ export const getAutomation = createServerFn({ method: "GET" }).handler(async () 
     log,
     configured: isEmailConfigured(settings),
     from: settings.emailFrom,
+    fromName: settings.emailFromName,
+    logoUrl: settings.emailLogoUrl,
     replyTo: settings.emailReplyTo,
     hasKey: Boolean(settings.resendApiKey),
   };
@@ -883,6 +885,8 @@ export const saveEmailSettings = createServerFn({ method: "POST" })
     z.object({
       resendApiKey: z.string().max(200),
       emailFrom: z.string().max(200),
+      emailFromName: z.string().max(80).default(""),
+      emailLogoUrl: z.string().max(500).default(""),
       emailReplyTo: z.string().max(200),
     }),
   )
@@ -897,9 +901,42 @@ export const saveEmailSettings = createServerFn({ method: "POST" })
     await updateSettings({
       resendApiKey: data.resendApiKey.trim() || current.resendApiKey,
       emailFrom: data.emailFrom.trim(),
+      emailFromName: data.emailFromName.trim(),
+      emailLogoUrl: data.emailLogoUrl.trim(),
       emailReplyTo: data.emailReplyTo.trim(),
     });
     return { ok: true };
+  });
+
+/**
+ * Put a built-in email back to the wording this version of the app ships.
+ *
+ * The defaults only ever seed an EMPTY table, so a shop that has been running
+ * since before a template changed keeps the old wording forever and has no
+ * way to see the new one. This is that way. It only touches the one rule, and
+ * leaves whether it is enabled alone.
+ */
+export const resetEmailRule = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.enum(["booking_confirmed", "reminder", "after_service", "booking_cancelled"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateEmailRule, DEFAULT_EMAIL_RULES } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const seed = DEFAULT_EMAIL_RULES.find((r) => r.id === data.id);
+    if (!seed) throw new Error("No default for that email.");
+
+    const rule = await updateEmailRule(data.id, {
+      subject: seed.subject,
+      body: seed.body,
+      offsetHours: seed.offsetHours,
+    });
+    if (!rule) throw new Error("Rule not found.");
+    return { rule };
   });
 
 /** Send one rule to a booking right now, ignoring enabled/already-sent. */

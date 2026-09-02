@@ -105,10 +105,26 @@ export function sampleVars(): Record<string, string> {
 }
 
 /** Low-level send. Returns null on success, or an error message. */
+/**
+ * The From header: a display name and an address.
+ *
+ * Left alone if the address already carries a name (someone may have typed
+ * the whole thing into the address field, which is what the docs used to tell
+ * them to do), and quotes are stripped from the name because an unescaped one
+ * produces a header Resend rejects outright.
+ */
+function fromHeader(name: string, address: string): string {
+  const addr = address.trim();
+  if (!name.trim() || addr.includes("<")) return addr;
+  return `${name.trim().replace(/["<>]/g, "")} <${addr}>`;
+}
+
 export async function sendEmail(input: {
   to: string;
   subject: string;
   text: string;
+  /** Optional branded version. Both are sent; clients pick what they can render. */
+  html?: string;
 }): Promise<string | null> {
   const settings = await getSettings();
   if (!isEmailConfigured(settings)) return "Email is not configured.";
@@ -121,10 +137,11 @@ export async function sendEmail(input: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: settings.emailFrom,
+        from: fromHeader(settings.emailFromName, settings.emailFrom),
         to: [input.to],
         subject: input.subject,
         text: input.text,
+        ...(input.html ? { html: input.html } : {}),
         ...(settings.emailReplyTo ? { reply_to: settings.emailReplyTo } : {}),
       }),
     });
@@ -183,10 +200,14 @@ export async function runTrigger(
     return record("skipped", "Already sent for this booking.");
   }
 
+  const { renderEmail } = await import("./email-html.server");
+  const { text, html } = await renderEmail(rule.body, vars!, booking);
+
   const error = await sendEmail({
     to: client.email,
     subject: renderedSubject,
-    text: renderTemplate(rule.body, vars!),
+    text,
+    html,
   });
 
   return error ? record("failed", error) : record("sent");

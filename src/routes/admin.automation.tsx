@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Mail, Play, Plus, Save, Send, Trash2, Workflow, X } from "lucide-react";
+import { AlertTriangle, Mail, Play, Plus, RotateCcw, Save, Send, Trash2, Workflow, X } from "lucide-react";
 
 import {
   createCustomRule,
   getAutomation,
   removeCustomRule,
   runAutomationNow,
+  resetEmailRule,
   saveEmailRule,
   saveEmailSettings,
 } from "@/lib/api/admin.functions";
@@ -52,6 +53,8 @@ const META: Record<string, { title: string; blurb: string; timing?: string }> = 
   },
 };
 
+type BuiltInId = Parameters<typeof resetEmailRule>[0]["data"]["id"];
+
 const VARS = [
   "name",
   "fullName",
@@ -65,6 +68,13 @@ const VARS = [
   "vehicle",
   "business",
   "businessPhone",
+  // Block-level: expands to the whole booking summary — the same card the
+  // customer sees on screen after booking.
+  "details",
+  "manageLink",
+  "policy",
+  "deposit",
+  "balance",
 ];
 
 function Automation() {
@@ -86,6 +96,8 @@ function Automation() {
   // Email credentials
   const [apiKey, setApiKey] = useState("");
   const [from, setFrom] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
   const [replyTo, setReplyTo] = useState("");
   const [savingCreds, setSavingCreds] = useState(false);
 
@@ -95,6 +107,8 @@ function Automation() {
       setData(res);
       setDrafts(Object.fromEntries(res.rules.map((r) => [r.id, { ...r }])));
       setFrom(res.from);
+      setFromName(res.fromName);
+      setLogoUrl(res.logoUrl);
       setReplyTo(res.replyTo);
       setError(null);
     } catch (e) {
@@ -138,7 +152,13 @@ function Automation() {
     setError(null);
     try {
       await saveEmailSettings({
-        data: { resendApiKey: apiKey, emailFrom: from, emailReplyTo: replyTo },
+        data: {
+          resendApiKey: apiKey,
+          emailFrom: from,
+          emailFromName: fromName,
+          emailLogoUrl: logoUrl,
+          emailReplyTo: replyTo,
+        },
       });
       setApiKey("");
       flash("Email settings saved.");
@@ -245,6 +265,30 @@ function Automation() {
               value={replyTo}
               placeholder="nate@detailedbynate.com"
               onChange={(e) => setReplyTo(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Sender name"
+            hint="What shows in the inbox instead of the bare address."
+          >
+            <input
+              className={inputCls}
+              value={fromName}
+              maxLength={80}
+              placeholder="Detailed by Nate"
+              onChange={(e) => setFromName(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Logo URL"
+            hint="Must start with https:// — mail clients won't load a file from your computer. Falls back to your business name in text."
+          >
+            <input
+              className={inputCls}
+              value={logoUrl}
+              maxLength={500}
+              placeholder="https://detailedbynate.com/logo.png"
+              onChange={(e) => setLogoUrl(e.target.value)}
             />
           </Field>
         </div>
@@ -390,14 +434,41 @@ function Automation() {
                   ))}
                 </div>
 
-                <Button
-                  variant={dirty ? "primary" : "outline"}
-                  loading={savingId === rule.id}
-                  disabled={!dirty}
-                  onClick={() => saveRule(draft)}
-                >
-                  <Save className="h-3.5 w-3.5" /> {dirty ? "Save changes" : "Saved"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant={dirty ? "primary" : "outline"}
+                    loading={savingId === rule.id}
+                    disabled={!dirty}
+                    onClick={() => saveRule(draft)}
+                  >
+                    <Save className="h-3.5 w-3.5" /> {dirty ? "Save changes" : "Saved"}
+                  </Button>
+                  {/* Defaults only seed an empty database, so a shop running
+                      since before a template changed would never otherwise
+                      see the new wording. */}
+                  {!rule.custom && (
+                    <Button
+                      variant="ghost"
+                      loading={savingId === `reset:${rule.id}`}
+                      onClick={async () => {
+                        if (!confirm("Replace this email with the default wording?")) return;
+                        setSavingId(`reset:${rule.id}`);
+                        setError(null);
+                        try {
+                          await resetEmailRule({ data: { id: rule.id as BuiltInId } });
+                          flash("Reset to the default wording.");
+                          await load();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Couldn't reset.");
+                        } finally {
+                          setSavingId(null);
+                        }
+                      }}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Reset to default
+                    </Button>
+                  )}
+                </div>
               </div>
             </GlassCard>
           );

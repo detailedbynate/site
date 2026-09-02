@@ -280,6 +280,13 @@ export interface Settings {
   /** Resend API key — HTTP only, so no SMTP dependency. */
   resendApiKey: string;
   emailFrom: string;
+  /** Sender display name. Sent as: Name <address>. Blank = address only. */
+  emailFromName: string;
+  /**
+   * Logo at the top of every email. Must be a public https URL — mail
+   * clients don't load relative paths, and Gmail strips data: images.
+   */
+  emailLogoUrl: string;
   emailReplyTo: string;
 
   /**
@@ -597,6 +604,8 @@ Notes: {{notes}}`,
   googleLastErrorAt: "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
+  emailFromName: "",
+  emailLogoUrl: "",
   emailReplyTo: "",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
@@ -721,18 +730,15 @@ export const DEFAULT_EMAIL_RULES: EmailRule[] = [
     subject: "You're booked in — {{service}} on {{date}}",
     body: `Hi {{name}},
 
-You're all set for your {{service}} detail.
+You're all set. Here's everything for your {{service}} detail.
 
-When: {{date}} at {{time}}
-Where: {{location}}
-Vehicle: {{vehicle}}
-Total: {{total}}
-Reference: {{reference}}
+{{details}}
 
-Need to change or cancel? Use your booking link:
-{{manageLink}}
+{{depositLink}}
 
 {{policy}}
+
+{{manageLink}}
 
 — {{business}}`,
   },
