@@ -59,3 +59,12 @@ export async function readPhotoDataUrl(id: string, mime: string): Promise<string
 export async function deletePhotoFile(id: string, mime: string): Promise<void> {
   await unlink(filenameFor(id, mime)).catch(() => undefined);
 }
+
+/** Raw bytes for serving over HTTP. Null when the file is missing. */
+export async function readPhotoBytes(id: string, mime: string): Promise<Buffer | null> {
+  try {
+    return await readFile(filenameFor(id, mime));
+  } catch {
+    return null;
+  }
+}

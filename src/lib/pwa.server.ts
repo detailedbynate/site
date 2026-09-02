@@ -188,3 +188,51 @@ export async function pwaResponse(url: URL): Promise<Response | null> {
     },
   });
 }
+
+/**
+ * Serve a branding image over HTTP: /img/<photo-id>
+ *
+ * Deliberately an ALLOWLIST, not "serve any photo by id". The photos table
+ * also holds customers' before-and-after shots of their vehicles, and an
+ * endpoint that served anything by id would put those on the open web behind
+ * nothing but an unguessable URL. Only images a branding setting actually
+ * points at are served — the logo, the social preview, the email header and
+ * the homepage hero, all of which are public by their nature anyway.
+ *
+ * This is what lets the logo live on the shop's own domain instead of a
+ * third-party CDN link that expires.
+ */
+export async function brandingImageResponse(url: URL): Promise<Response | null> {
+  const match = /^\/img\/([0-9a-f-]{36})$/i.exec(url.pathname);
+  if (!match) return null;
+  const id = match[1]!;
+
+  const { getSettings, findPhoto } = await import("./db.server");
+  const settings = await getSettings().catch(() => null);
+  if (!settings) return null;
+
+  const allowed = new Set(
+    [settings.faviconUrl, settings.ogImageUrl, settings.emailLogoUrl, settings.heroPhotoId]
+      .map((v) => (v ?? "").trim())
+      // The settings hold either a bare photo id (hero) or a /img/<id> URL.
+      .map((v) => v.replace(/^\/img\//, ""))
+      .filter(Boolean),
+  );
+  if (!allowed.has(id)) return null;
+
+  const photo = await findPhoto(id);
+  if (!photo) return null;
+
+  const { readPhotoBytes } = await import("./uploads.server");
+  const bytes = await readPhotoBytes(id, photo.mime);
+  if (!bytes) return null;
+
+  return new Response(new Uint8Array(bytes), {
+    headers: {
+      "content-type": photo.mime,
+      // Content is immutable per id — a new upload gets a new id — so this
+      // can be cached hard. That is the whole point versus a link that dies.
+      "cache-control": "public, max-age=31536000, immutable",
+    },
+  });
+}

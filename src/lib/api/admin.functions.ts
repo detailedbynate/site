@@ -296,6 +296,61 @@ export const removeAppointment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// --------------------------- Branding images --------------------------
+
+/**
+ * Upload a logo / social image and get back a URL on this domain.
+ *
+ * The alternative — pasting a link from Facebook, Google Photos or a
+ * Dropbox share — looks like it works and then stops: those URLs carry
+ * expiry stamps, and when one lapses the favicon, the app icon and the logo
+ * on every email break at once. A file stored here is served from /img/<id>
+ * and lasts as long as the business does.
+ */
+export const uploadBrandingImage = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      slot: z.enum(["favicon", "ogImage", "emailLogo"]),
+      mime: z.string().max(80),
+      base64: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { addPhoto, getSettings, updateSettings, deletePhoto } = await import("../db.server");
+    const { savePhotoFile, deletePhotoFile, isAllowedImage } = await import("../uploads.server");
+    const { requireRole } = await import("../auth.server");
+    const { randomUUID } = await import("node:crypto");
+    await requireRole("owner");
+
+    if (!isAllowedImage(data.mime)) {
+      throw new Error("Only JPEG, PNG and WebP images are allowed.");
+    }
+
+    const key = (
+      { favicon: "faviconUrl", ogImage: "ogImageUrl", emailLogo: "emailLogoUrl" } as const
+    )[data.slot];
+
+    const settings = await getSettings();
+    const previous = settings[key];
+
+    const photoId = randomUUID();
+    const size = await savePhotoFile(photoId, data.mime, data.base64);
+    await addPhoto({ id: photoId, kind: "other", mime: data.mime, size });
+
+    const url = `/img/${photoId}`;
+    await updateSettings({ [key]: url } as never);
+
+    // Clean up the file this replaced, but only if it was one of ours —
+    // a pasted external URL has nothing to delete.
+    const oldId = /^\/img\/([0-9a-f-]{36})$/i.exec(previous ?? "")?.[1];
+    if (oldId) {
+      const removed = await deletePhoto(oldId).catch(() => undefined);
+      if (removed) await deletePhotoFile(removed.id, removed.mime).catch(() => undefined);
+    }
+
+    return { url };
+  });
+
 // ------------------------------ Invoices ------------------------------
 
 /**

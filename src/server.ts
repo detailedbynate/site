@@ -106,9 +106,15 @@ export default {
       // Admin-only PWA endpoints: manifest, service worker, fallback icon.
       // Scoped under /admin/ so the customer site is never installable and
       // never falls under a worker.
-      const { pwaResponse } = await import("./lib/pwa.server");
-      const pwa = await pwaResponse(new URL(request.url)).catch(() => null);
+      const requestUrl = new URL(request.url);
+      const { pwaResponse, brandingImageResponse } = await import("./lib/pwa.server");
+      const pwa = await pwaResponse(requestUrl).catch(() => null);
       if (pwa) return pwa;
+
+      // Logo / social image / hero, served from this domain so they never
+      // depend on a third-party link that expires.
+      const img = await brandingImageResponse(requestUrl).catch(() => null);
+      if (img) return img;
 
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -12,6 +12,7 @@ import {
   uploadPhoto,
 } from "@/lib/api/admin.functions";
 import { clearHeroImage, getHeroImage, setHeroImage } from "@/lib/api/content.functions";
+import { BrandingUpload } from "@/components/admin/BrandingUpload";
 import {
   Button,
   ErrorNote,
@@ -223,14 +224,35 @@ function Seo() {
                 placeholder="https://detailedbynate.com/share.jpg"
                 onChange={(e) => set("ogImageUrl", e.target.value)}
               />
+              <BrandingUpload
+                slot="ogImage"
+                label="Upload a share image"
+                onUploaded={(url) => set("ogImageUrl", url)}
+              />
             </Field>
-            <Field label="Favicon URL" hint="The little icon in the browser tab.">
+            <Field
+              label="Logo / favicon"
+              hint="The browser-tab icon, and the icon of the admin app on your phone. A square PNG, 512×512, works everywhere."
+            >
               <input
                 className={inputCls}
                 value={s.faviconUrl}
                 placeholder="https://detailedbynate.com/favicon.png"
                 onChange={(e) => set("faviconUrl", e.target.value)}
               />
+              <BrandingUpload
+                slot="favicon"
+                label="Upload a logo"
+                onUploaded={(url) => set("faviconUrl", url)}
+              />
+              {/* A link copied out of Facebook or Google Photos carries an
+                  expiry stamp and will stop working. Uploading avoids it. */}
+              {/^https?:\/\//i.test(s.faviconUrl) && (
+                <p className="mt-1.5 text-[11.5px] text-amber-300">
+                  This points at another site. Links from Facebook, Google Photos and similar
+                  expire — upload the file instead and it will be served from your own domain.
+                </p>
+              )}
             </Field>
             <Field label="Twitter / X handle">
               <input
