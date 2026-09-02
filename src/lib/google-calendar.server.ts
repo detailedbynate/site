@@ -81,71 +81,205 @@ async function getCalendarClient() {
 export interface BusyInterval {
   start: string; // ISO
   end: string; // ISO
+  /** The Google event id this came from, so a booking can ignore its own. */
+  eventId?: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  /** Instant the event starts, resolved into the business timezone. */
+  startISO: string;
+  endISO: string;
+  /** YYYY-MM-DD in the business timezone, for grouping into a month grid. */
+  date: string;
+  allDay: boolean;
+  /** Marked "Free" in Google. All-day events are Free by DEFAULT. */
+  free: boolean;
+  location?: string;
+  htmlLink?: string;
+}
+
+/** The shape of a Google event we care about; a subset of calendar_v3.Schema$Event. */
+export interface RawGoogleEvent {
+  id?: string | null;
+  summary?: string | null;
+  status?: string | null;
+  transparency?: string | null;
+  location?: string | null;
+  htmlLink?: string | null;
+  start?: { date?: string | null; dateTime?: string | null } | null;
+  end?: { date?: string | null; dateTime?: string | null } | null;
+  attendees?: { self?: boolean | null; responseStatus?: string | null }[] | null;
 }
 
 /**
- * Returns the busy intervals on the configured calendar between two ISO
- * timestamps. Returns [] (treats everything as free) if Google Calendar
- * isn't configured yet, so local dev / the booking form still works before
- * you've wired up credentials — see README.
+ * One Google event turned into our own shape, or null if it should be
+ * ignored entirely (cancelled, declined, or missing both time forms).
+ *
+ * Exported so it can be tested directly against real API payload shapes —
+ * the all-day and timezone handling here is where the bugs live, and it is
+ * otherwise only reachable behind a network call.
  */
-export async function getBusyIntervals(timeMinISO: string, timeMaxISO: string): Promise<BusyInterval[]> {
+export function normalizeEvent(e: RawGoogleEvent, timeZone: string): CalendarEvent | null {
+  // Events you were invited to and declined are not commitments.
+  const declined = (e.attendees ?? []).some((a) => a.self && a.responseStatus === "declined");
+  if (declined || e.status === "cancelled") return null;
+
+  const allDay = Boolean(e.start?.date);
+  let startISO: string;
+  let endISO: string;
+
+  if (allDay) {
+    // All-day events carry plain dates, and `end.date` is EXCLUSIVE, so a
+    // one-day event reads 2026-09-02 -> 2026-09-03. Resolving both against
+    // the business timezone is what makes a day off block that local day
+    // rather than a UTC one.
+    startISO = zonedDateToISO(e.start!.date!, timeZone);
+    endISO = zonedDateToISO(e.end?.date ?? e.start!.date!, timeZone);
+  } else {
+    if (!e.start?.dateTime || !e.end?.dateTime) return null;
+    startISO = new Date(e.start.dateTime).toISOString();
+    endISO = new Date(e.end.dateTime).toISOString();
+  }
+
+  return {
+    id: e.id ?? "",
+    summary: e.summary ?? "(no title)",
+    startISO,
+    endISO,
+    date: dateInZone(startISO, timeZone),
+    allDay,
+    free: e.transparency === "transparent",
+    location: e.location ?? undefined,
+    htmlLink: e.htmlLink ?? undefined,
+  };
+}
+
+/**
+ * Every event on the configured calendar between two instants, recurrences
+ * already expanded into individual occurrences.
+ *
+ * Returns [] if Google isn't configured, so the booking form still works
+ * before credentials are wired up.
+ */
+export async function listCalendarEvents(
+  timeMinISO: string,
+  timeMaxISO: string,
+): Promise<CalendarEvent[]> {
   if (!(await isGoogleCalendarConfigured())) return [];
 
   const settings = await getSettings();
   const calendar = await getCalendarClient();
 
   try {
-    const res = await calendar.freebusy.query({
-      requestBody: {
-        timeMin: timeMinISO,
-        timeMax: timeMaxISO,
-        timeZone: settings.timezone,
-        items: [{ id: settings.googleCalendarId }],
-      },
+    const res = await calendar.events.list({
+      calendarId: settings.googleCalendarId,
+      timeMin: timeMinISO,
+      timeMax: timeMaxISO,
+      // Expand recurring events into occurrences; without this a weekly
+      // "day off" arrives as one master event and blocks only its first week.
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 2500,
+      timeZone: settings.timezone,
     });
 
-    const calendars = res.data.calendars ?? {};
+    await clearCalendarError();
 
-    /*
-      Read every calendar in the response rather than looking up our own id.
-
-      Google keys this object by the calendar it RESOLVED, not the string we
-      sent. Ask for "primary" — which is the default here — and the reply
-      comes back keyed by the real address, e.g. "you@gmail.com". Looking up
-      `calendars["primary"]` therefore found nothing, fell through to `[]`,
-      and every busy event was silently ignored: the booking form showed the
-      whole week as free no matter what was in the calendar.
-
-      Only one calendar is ever requested, so merging them all is safe.
-    */
-    const busy = Object.values(calendars).flatMap((c) => c?.busy ?? []);
-
-    // Google reports per-calendar problems in here instead of throwing —
-    // a wrong id or a revoked share shows up as `notFound`.
-    const problems = Object.values(calendars).flatMap((c) => c?.errors ?? []);
-    if (problems.length) {
-      await recordCalendarError(
-        `Calendar "${settings.googleCalendarId}": ${problems
-          .map((e) => e.reason ?? "unknown error")
-          .join(", ")}`,
-      );
-    } else if (busy.length || Object.keys(calendars).length) {
-      await clearCalendarError();
+    const out: CalendarEvent[] = [];
+    for (const e of res.data.items ?? []) {
+      const normalized = normalizeEvent(e, settings.timezone);
+      if (normalized) out.push(normalized);
     }
-
-    return busy
-      .filter((b): b is { start: string; end: string } => Boolean(b.start && b.end))
-      .map((b) => ({ start: b.start, end: b.end }));
+    return out;
   } catch (err) {
-    // Availability must still render if Google is unreachable — but record
-    // why, so it isn't invisible. Treating everything as free is the safe
-    // direction: it can double-book, never lose a booking, and the local
-    // booking check still runs.
     await recordCalendarError(googleMessage(err));
-    console.error("Google Calendar freebusy failed:", err);
+    console.error("Google Calendar events.list failed:", err);
     return [];
   }
+}
+
+/** Midnight of a YYYY-MM-DD in a given timezone, as a UTC instant. */
+function zonedDateToISO(date: string, timeZone: string): string {
+  const guess = new Date(`${date}T00:00:00Z`).getTime();
+  // Two passes: the offset itself depends on the instant (DST), so resolve
+  // once with a rough guess and again with the corrected one.
+  let ms = guess;
+  for (let i = 0; i < 2; i++) {
+    // Refine in place. Re-basing on `guess` each pass would undo the first
+    // correction and hand back the guess unchanged.
+    ms += guess - zonedWallClockMs(ms, timeZone);
+  }
+  return new Date(ms).toISOString();
+}
+
+/** What `instant` reads as on a wall clock in `timeZone`, as a UTC-epoch ms. */
+function zonedWallClockMs(instant: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(instant));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+}
+
+/** YYYY-MM-DD that an instant falls on, in a given timezone. */
+function dateInZone(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+/**
+ * Whether an event stops customers booking over it.
+ *
+ * All-day events always block. A TIMED event marked "Free" does not — that
+ * is a deliberate "I am available during this". The asymmetry is the whole
+ * point: Google makes all-day events Free by default, so honouring that flag
+ * for them would ignore the most common way of saying "I am off that day".
+ */
+export function blocksBooking(e: CalendarEvent): boolean {
+  return e.allDay || !e.free;
+}
+
+/**
+ * The intervals that should block booking, between two ISO timestamps.
+ *
+ * Built from events.list rather than freebusy.query, deliberately.
+ * freebusy only reports events whose transparency is "opaque" — and Google
+ * makes all-day events "Free" BY DEFAULT. So the single most common way to
+ * say "I am not working that day", blocking the whole day out in Google,
+ * produced a freebusy response with nothing in it, and the booking form
+ * offered the day as wide open. Listing events and deciding here means what
+ * you see on your calendar is what customers cannot book over.
+ *
+ * The one thing still honoured: a TIMED event you explicitly marked Free.
+ * That is a deliberate "I am available during this" and is left bookable.
+ * All-day events block regardless, because their Free status is a default
+ * nobody chose.
+ *
+ * Returns [] (everything free) if Google isn't configured.
+ */
+export async function getBusyIntervals(
+  timeMinISO: string,
+  timeMaxISO: string,
+): Promise<BusyInterval[]> {
+  const events = await listCalendarEvents(timeMinISO, timeMaxISO);
+  return events.filter(blocksBooking).map((e) => ({
+    start: e.startISO,
+    end: e.endISO,
+    eventId: e.id,
+  }));
 }
 
 export interface CreateEventInput {

@@ -1173,6 +1173,41 @@ export const testGoogleConnection = createServerFn({ method: "POST" }).handler(a
   return await testConnection();
 });
 
+/**
+ * The events already on your Google calendar for a month, so the admin
+ * calendar shows the whole picture — jobs booked through the site AND
+ * everything else you've committed to — instead of only half of it.
+ *
+ * Returns [] when Google isn't connected; the page renders bookings alone.
+ */
+export const getCalendarEvents = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      from: dateSchema,
+      to: dateSchema,
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { listCalendarEvents } = await import("../google-calendar.server");
+    const { requireUser } = await import("../auth.server");
+    const { getSettings } = await import("../db.server");
+    await requireUser();
+
+    const settings = await getSettings();
+    const events = await listCalendarEvents(
+      new Date(`${data.from}T00:00:00Z`).toISOString(),
+      // Exclusive end, plus a day of slack so an event starting late on the
+      // last day of the month still comes back.
+      new Date(`${data.to}T00:00:00Z`).toISOString(),
+    );
+
+    return {
+      connected: Boolean(settings.googleRefreshToken),
+      calendarId: settings.googleCalendarId,
+      events,
+    };
+  });
+
 export const disconnectGoogle = createServerFn({ method: "POST" }).handler(async () => {
   const { updateSettings } = await import("../db.server");
   const { requireUser } = await import("../auth.server");

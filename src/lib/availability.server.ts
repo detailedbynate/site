@@ -111,9 +111,11 @@ export async function getAvailableSlots(
   // without this guard a crafted request could book in the past or inside
   // the notice period.
   const today = todayInZone(cfg.timezone);
-  const earliest = addDays(today, cfg.leadDays);
+  const cutoff = leadTimeCutoff(cfg.leadDays);
   const latest = addDays(today, Math.max(cfg.bookingWindowDays - 1, 0));
-  if (date < earliest || date > latest) return [];
+  // Cheap reject: the whole day is before the notice cutoff, or past the
+  // window. The per-slot check below is what actually enforces the notice.
+  if (date < dateOfInstant(cutoff, cfg.timezone) || date > latest) return [];
 
   const hours = hoursForDate(cfg, date, location);
   if (!hours) return [];
@@ -127,6 +129,14 @@ export async function getAvailableSlots(
     getBusyIntervals(dayStartISO, dayEndISO),
     listBookingsForDate(date),
   ]);
+
+  // When rescheduling, skip the calendar event this booking already created.
+  // The local booking is excluded below via ignoreBookingId; without this its
+  // Google twin would still block, so a job could never move within its own
+  // day. (Latent until now: freebusy returned no ids to match on.)
+  const ownEventId = ignoreBookingId
+    ? localBookings.find((b) => b.id === ignoreBookingId)?.googleEventId
+    : undefined;
 
   /*
     Convert each Google busy block to minutes from the START OF THIS DAY, then
@@ -147,10 +157,12 @@ export async function getAvailableSlots(
   const offsetMinutes = (iso: string) => (new Date(iso).getTime() - dayStartMs) / 60_000;
 
   const busyRangesMin: TimeRange[] = [
-    ...googleBusy.map((b) => ({
-      startMinutes: Math.max(0, offsetMinutes(b.start)),
-      endMinutes: Math.min(24 * 60, offsetMinutes(b.end)),
-    })),
+    ...googleBusy
+      .filter((b) => !ownEventId || b.eventId !== ownEventId)
+      .map((b) => ({
+        startMinutes: Math.max(0, offsetMinutes(b.start)),
+        endMinutes: Math.min(24 * 60, offsetMinutes(b.end)),
+      })),
     ...localBookings
       .filter((b) => b.id !== ignoreBookingId)
       .map((b) => ({
@@ -160,11 +172,6 @@ export async function getAvailableSlots(
   ];
 
   const slots: SlotResult[] = [];
-  const now = new Date();
-  // Compare dates in the BUSINESS timezone. Comparing the server's local date
-  // meant a UTC host (as on Railway) disagreed about which day "today" is for
-  // several hours each evening.
-  const isToday = date === todayInZone(cfg.timezone);
 
   for (let start = openMin; start + durationMinutes <= closeMin; start += step) {
     const end = start + durationMinutes;
@@ -172,7 +179,13 @@ export async function getAvailableSlots(
     if (overlaps) continue;
 
     const startISO = zonedTimeToISO(date, start, cfg.timezone);
-    if (isToday && new Date(startISO) < now) continue;
+    // The real notice rule: a slot must be at least leadDays * 24h away.
+    // This used to be a whole-day comparison, so with one day's notice set,
+    // booking at 11pm on the 1st still offered 8:30am on the 2nd - nine and
+    // a half hours, not a day. Comparing instants makes the setting mean
+    // what it says, and it also subsumes the old "not in the past" check
+    // (with zero notice the cutoff is simply now).
+    if (new Date(startISO) < cutoff) continue;
 
     slots.push({
       startTime: minutesToTime(start),
@@ -182,6 +195,21 @@ export async function getAvailableSlots(
   }
 
   return slots;
+}
+
+/** The earliest instant a booking may start, given the notice setting. */
+function leadTimeCutoff(leadDays: number): Date {
+  return new Date(Date.now() + Math.max(leadDays, 0) * 24 * 60 * 60 * 1000);
+}
+
+/** The YYYY-MM-DD an instant falls on, in the business timezone. */
+function dateOfInstant(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
 }
 
 export type DayUnavailableReason = "closed" | "booked" | "lead-time";
@@ -232,6 +260,10 @@ export async function getAvailableDays(
 ): Promise<DayAvailability[]> {
   const cfg = await getSettings();
   const today = todayInZone(cfg.timezone);
+  // Same cutoff the slot builder uses, so a day greyed out as "too soon"
+  // is exactly a day with no slot past the notice cutoff.
+  const cutoff = leadTimeCutoff(cfg.leadDays);
+  const earliestDate = dateOfInstant(cutoff, cfg.timezone);
 
   const candidates: string[] = [];
   const days: DayAvailability[] = [];
@@ -239,7 +271,7 @@ export async function getAvailableDays(
   for (let i = 0; i < cfg.bookingWindowDays; i++) {
     const date = addDays(today, i);
 
-    if (i < cfg.leadDays) {
+    if (date < earliestDate) {
       days.push({ date, available: false, slotCount: 0, reason: "lead-time" });
       continue;
     }
@@ -247,7 +279,11 @@ export async function getAvailableDays(
       days.push({ date, available: false, slotCount: 0, reason: "closed" });
       continue;
     }
-    days.push({ date, available: false, slotCount: 0, reason: "booked" });
+    // The cutoff can land mid-day, so a day can be open, free, and still
+    // entirely too soon. Label it for what it is rather than "booked".
+    const dayEnds = new Date(zonedTimeToISO(date, 24 * 60, cfg.timezone));
+    const reason: DayUnavailableReason = dayEnds <= cutoff ? "lead-time" : "booked";
+    days.push({ date, available: false, slotCount: 0, reason });
     candidates.push(date);
   }
 
