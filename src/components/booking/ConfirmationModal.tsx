@@ -79,7 +79,7 @@ export function ConfirmationModal({
           >
             {/* solid brand header — no washed-out glass */}
             <div
-              className="sheen relative px-7 pb-9 pt-8 text-primary-foreground"
+              className="sheen relative px-5 pb-9 pt-8 text-primary-foreground sm:px-7"
               style={{ backgroundImage: "var(--gradient-brand)" }}
             >
               <button
@@ -116,7 +116,7 @@ export function ConfirmationModal({
               </motion.p>
             </div>
 
-            <div className="relative z-10 -mt-5 px-7">
+            <div className="relative z-10 -mt-5 px-5 sm:px-7">
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.28 } }}
@@ -146,7 +146,7 @@ export function ConfirmationModal({
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0, transition: { delay: 0.34 } }}
-              className="mt-5 grid gap-2 px-7"
+              className="mt-5 grid gap-2 px-5 sm:px-7"
             >
               <Block icon={CalendarDays} title="When">
                 {details.dateLabel} · {details.time}
@@ -170,7 +170,7 @@ export function ConfirmationModal({
             </motion.div>
 
             {details.discountCode && details.discountAmount ? (
-              <div className="mt-5 flex items-baseline justify-between px-7">
+              <div className="mt-5 flex items-baseline justify-between px-5 sm:px-7">
                 <span className="text-sm font-semibold text-primary">
                   Code {details.discountCode} applied
                 </span>
@@ -178,7 +178,7 @@ export function ConfirmationModal({
               </div>
             ) : null}
 
-            <div className="mt-5 flex items-baseline justify-between border-t border-border px-7 pt-4">
+            <div className="mt-5 flex items-baseline justify-between border-t border-border px-5 sm:px-7 pt-4">
               <span className="text-sm font-semibold text-muted-foreground">Total due</span>
               <span className="font-display text-3xl font-bold text-foreground">
                 ${details.total}
@@ -207,7 +207,7 @@ export function ConfirmationModal({
             ) : null}
 
             {details.manageUrl && (
-              <p className="mt-4 px-7 text-[12.5px] leading-relaxed text-muted-foreground">
+              <p className="mt-4 px-5 sm:px-7 text-[12.5px] leading-relaxed text-muted-foreground">
                 Need to change or cancel?{" "}
                 <a
                   href={details.manageUrl}
@@ -219,7 +219,7 @@ export function ConfirmationModal({
               </p>
             )}
 
-            <div className="px-7 pb-7 pt-5">
+            <div className="px-5 sm:px-7 pb-7 pt-5">
               <motion.button
                 type="button"
                 whileHover={{ scale: 1.02 }}
@@ -253,7 +253,7 @@ function Block({
       <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <Icon className="h-3.5 w-3.5 text-primary" /> {title}
       </p>
-      <p className="mt-1 text-sm font-medium text-foreground">{children}</p>
+      <p className="mt-1 break-words text-sm font-medium text-foreground">{children}</p>
     </div>
   );
 }

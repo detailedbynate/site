@@ -296,6 +296,71 @@ export const removeAppointment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ------------------------------ Invoices ------------------------------
+
+/**
+ * Email an itemised invoice for one booking.
+ *
+ * The numbers come from buildInvoice(), the same function behind the
+ * Payments page — an invoice that disagrees with the balance shown in the
+ * admin would be worse than no invoice at all.
+ *
+ * A Stripe link for the outstanding balance is attached when there is one and
+ * Stripe is connected. Sending twice mints a second link for the same
+ * balance, which is harmless: paying either one settles the same amount, and
+ * the balance is recorded against the booking by hand in Payments.
+ */
+export const sendInvoice = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ bookingId: idSchema }))
+  .handler(async ({ data }) => {
+    const { findBookingById, findClientById, getSettings } = await import("../db.server");
+    const { buildInvoice } = await import("../invoice");
+    const { runTrigger } = await import("../email.server");
+    const { isStripeConfigured } = await import("../stripe.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const booking = await findBookingById(data.bookingId);
+    if (!booking) throw new Error("Booking not found.");
+
+    const client = await findClientById(booking.clientId);
+    if (!client?.email) throw new Error("That customer has no email address on file.");
+
+    const settings = await getSettings();
+    const invoice = buildInvoice(booking, settings.travelFee);
+
+    let payLink = "";
+    if (invoice.balance > 0 && isStripeConfigured(settings)) {
+      try {
+        const { createPaymentLink } = await import("../stripe.server");
+        const link = await createPaymentLink({
+          amount: invoice.balance,
+          description: `Invoice ${invoice.number} — ${booking.serviceTitle}`,
+          reference: booking.reference,
+        });
+        payLink = link.url;
+      } catch (err) {
+        // An invoice with no pay button still beats no invoice — the customer
+        // can pay in person, and the failure is worth knowing about.
+        console.error("Couldn't create the invoice payment link:", err);
+      }
+    }
+
+    // force: an invoice is sent on purpose, possibly more than once, so the
+    // already-sent guard that protects automatic emails must not apply.
+    const result = await runTrigger("invoice", booking, {
+      force: true,
+      extraVars: { payLink },
+    });
+
+    if (result.status === "failed") throw new Error(result.error ?? "Couldn't send the invoice.");
+    if (result.status === "skipped") {
+      throw new Error(result.error ?? "Email isn't configured yet — set it up under Automation.");
+    }
+
+    return { ok: true as const, to: client.email, balance: invoice.balance, hasPayLink: !!payLink };
+  });
+
 // --------------------- Legal pages & analytics ------------------------
 
 export const getSitePages = createServerFn({ method: "GET" }).handler(async () => {
@@ -753,26 +818,15 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
 
   const [bookings, settings] = await Promise.all([listBookingsWithClients(), getSettings()]);
 
-  const orders = bookings.map((b) => {
-    // Reconstruct the breakdown from what was stored on the booking.
-    const travel = b.location === "mobile" ? settings.travelFee : 0;
-    const base = (b.totalPrice ?? 0) - travel;
-    const lines: { label: string; detail?: string; amount: number }[] = [
-      { label: b.serviceTitle, detail: "Package", amount: base },
-    ];
-    if (b.addOnTitles?.length) {
-      lines.push({
-        label: "Add-ons",
-        detail: b.addOnTitles.join(", "),
-        amount: 0,
-      });
-    }
-    if (travel) lines.push({ label: "Mobile travel", amount: travel });
-    if (b.discount) lines.push({ label: "Discount", amount: -b.discount });
-    if (b.tip) lines.push({ label: "Tip", detail: "Added after service", amount: b.tip });
+  const { buildInvoice } = await import("../invoice");
 
-    const grandTotal = (b.totalPrice ?? 0) - (b.discount ?? 0) + (b.tip ?? 0);
-    const paid = b.amountPaid ?? 0;
+  const orders = bookings.map((b) => {
+    // One builder for the breakdown, shared with the invoice email — so the
+    // balance shown here and the balance a customer is billed cannot drift.
+    const inv = buildInvoice(b, settings.travelFee);
+    const lines = inv.lines;
+    const grandTotal = inv.grandTotal;
+    const paid = inv.amountPaid;
 
     return {
       id: b.id,
@@ -790,7 +844,7 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
       tip: b.tip ?? 0,
       grandTotal,
       amountPaid: paid,
-      balance: Math.max(0, grandTotal - paid),
+      balance: inv.balance,
     };
   });
 

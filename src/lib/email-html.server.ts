@@ -1,4 +1,5 @@
 import { getSettings, type Booking } from "./db.server";
+import type { Invoice } from "./invoice";
 import { renderTemplate } from "./email.server";
 
 // --------------------------------------------------------------------------
@@ -25,7 +26,7 @@ import { renderTemplate } from "./email.server";
   That is what lets a template put the buttons where it wants them instead of
   having them tacked on after the sign-off.
 */
-const BLOCK_VARS = ["details", "manageLink", "depositLink"] as const;
+const BLOCK_VARS = ["details", "manageLink", "depositLink", "invoice", "payLink"] as const;
 const token = (name: string) => `\u0001${name}\u0001`;
 const TOKEN_SPLIT = new RegExp(`(\u0001(?:${BLOCK_VARS.join("|")})\u0001)`);
 
@@ -88,6 +89,60 @@ function detailsCard(booking: Booking, vars: Record<string, string>): string {
   ].join("");
 
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;margin:0 0 20px"><tr><td style="padding:14px 20px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></td></tr></table>`;
+}
+
+/**
+ * The itemised invoice table.
+ *
+ * Right-aligned money in its own column, a rule above the total, and the
+ * balance in the accent colour when there is one — the number the customer
+ * needs to act on should be the one their eye lands on.
+ */
+function invoiceTable(inv: Invoice): string {
+  const line = (l: { label: string; detail?: string; amount: number }) => {
+    const right =
+      l.amount === 0 && l.detail
+        ? ""
+        : `<td style="padding:8px 0 8px 16px;text-align:right;color:#111827;font-size:14px;font-weight:600;white-space:nowrap">${escapeHtml(
+            (l.amount < 0 ? "-$" : "$") + Math.abs(l.amount).toFixed(2),
+          )}</td>`;
+    return `<tr><td style="padding:8px 0;color:#374151;font-size:14px">${escapeHtml(l.label)}${
+      l.detail
+        ? `<br><span style="color:#6b7280;font-size:12.5px">${escapeHtml(l.detail)}</span>`
+        : ""
+    }</td>${right || '<td style="padding:8px 0"></td>'}</tr>`;
+  };
+
+  const totalRow = (label: string, value: string, accent = false) =>
+    `<tr><td style="padding:8px 0;color:${accent ? "#111827" : "#6b7280"};font-size:${
+      accent ? "15px" : "13.5px"
+    };font-weight:${accent ? "700" : "500"}">${escapeHtml(label)}</td>` +
+    `<td style="padding:8px 0 8px 16px;text-align:right;color:${
+      accent ? BRAND : "#111827"
+    };font-size:${accent ? "17px" : "14px"};font-weight:700;white-space:nowrap">${escapeHtml(
+      value,
+    )}</td></tr>`;
+
+  const money = (n: number) => `$${n.toFixed(2)}`;
+
+  return (
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;margin:0 0 20px"><tr><td style="padding:16px 20px">` +
+    `<p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6b7280">Invoice ${escapeHtml(
+      inv.number,
+    )}</p>` +
+    `<p style="margin:0 0 12px;font-size:12.5px;color:#6b7280">Service date ${escapeHtml(
+      inv.serviceDate,
+    )}</p>` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">` +
+    inv.lines.map(line).join("") +
+    `<tr><td colspan="2" style="border-top:1px solid #e5e7eb;font-size:0;line-height:0">&nbsp;</td></tr>` +
+    totalRow("Total", money(inv.grandTotal)) +
+    (inv.amountPaid > 0 ? totalRow("Paid", `-${money(inv.amountPaid)}`) : "") +
+    (inv.paid
+      ? totalRow("Paid in full", "Thank you", true)
+      : totalRow("Balance due", money(inv.balance), true)) +
+    `</table></td></tr></table>`
+  );
 }
 
 /** A prominent button — used for the deposit and the manage link. */
@@ -153,15 +208,21 @@ export async function renderEmail(
   template: string,
   vars: Record<string, string>,
   booking?: Booking,
+  /** Present only for the invoice email; fills the {{invoice}} block. */
+  invoice?: Invoice,
 ): Promise<{ text: string; html: string }> {
   const settings = await getSettings();
 
   const depositUrl = booking?.depositUrl && !booking.depositPaidAt ? booking.depositUrl : "";
 
+  const { invoiceText } = await import("./invoice");
+
   let text = renderTemplate(template, {
     ...vars,
     details: plainDetails(vars),
     depositLink: depositUrl,
+    invoice: invoice ? invoiceText(invoice) : "",
+    payLink: vars.payLink ?? "",
   });
 
   // The HTML version gets buttons for these; the text version needs the bare
@@ -193,6 +254,8 @@ ${vars.manageLink}`;
     details: token("details"),
     manageLink: token("manageLink"),
     depositLink: token("depositLink"),
+    invoice: token("invoice"),
+    payLink: token("payLink"),
   });
 
   const blocks: Record<string, string> = {
@@ -203,6 +266,12 @@ ${vars.manageLink}`;
     [token("depositLink")]: depositUrl
       ? button(depositUrl, `Pay the ${vars.deposit} deposit`)
       : "",
+    [token("invoice")]: invoice ? invoiceTable(invoice) : "",
+    // Only offer a pay button when there is actually something owing.
+    [token("payLink")]:
+      vars.payLink && invoice && !invoice.paid
+        ? button(vars.payLink, `Pay $${invoice.balance.toFixed(2)}`)
+        : "",
   };
 
   let bodyHtml = withToken

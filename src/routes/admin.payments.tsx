@@ -9,11 +9,12 @@ import {
   ExternalLink,
   HandCoins,
   Link as LinkIcon,
+  Receipt,
   RotateCcw,
   Wallet,
 } from "lucide-react";
 
-import { listOrders, recordPayment } from "@/lib/api/admin.functions";
+import { listOrders, recordPayment, sendInvoice } from "@/lib/api/admin.functions";
 import { createBookingPaymentLink } from "@/lib/api/finance.functions";
 import { EditorModal, FieldRow } from "@/components/admin/EditorModal";
 import { TabBar } from "@/components/admin/TabBar";
@@ -70,6 +71,33 @@ function Payments() {
   const [link, setLink] = useState<{ reference: string; url: string } | null>(null);
 
   /** Create a hosted Stripe link for the outstanding balance. */
+  const [invoicing, setInvoicing] = useState<string | null>(null);
+
+  /**
+   * Email the customer an itemised invoice.
+   *
+   * Available whether or not there's a balance: a paid job still wants a
+   * receipt, and the same email covers both — it says "paid in full" instead
+   * of showing a Pay button.
+   */
+  const emailInvoice = async (o: Order) => {
+    setInvoicing(o.id);
+    setError(null);
+    try {
+      const res = await sendInvoice({ data: { bookingId: o.id } });
+      setOk(
+        res.balance > 0
+          ? `Invoice sent to ${res.to}${res.hasPayLink ? " with a payment link." : "."}`
+          : `Receipt sent to ${res.to}.`,
+      );
+      setTimeout(() => setOk(null), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't send the invoice.");
+    } finally {
+      setInvoicing(null);
+    }
+  };
+
   const makeLink = async (o: Order) => {
     setLinking(o.id);
     setError(null);
@@ -276,6 +304,18 @@ function Payments() {
                     className="rounded-md p-1.5 text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground disabled:opacity-40"
                   >
                     <LinkIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {o.status !== "cancelled" && (
+                  <button
+                    type="button"
+                    onClick={() => emailInvoice(o)}
+                    disabled={invoicing === o.id}
+                    aria-label={`Email an invoice for ${o.reference}`}
+                    title="Email an itemised invoice"
+                    className="rounded-md p-1.5 text-muted-foreground transition hover:bg-[var(--fill-3)] hover:text-foreground disabled:opacity-40"
+                  >
+                    <Receipt className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {o.paymentStatus === "paid" && (

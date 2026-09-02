@@ -164,7 +164,7 @@ export async function sendEmail(input: {
 export async function runTrigger(
   trigger: EmailTrigger,
   booking: Booking,
-  opts: { force?: boolean; ruleId?: string } = {},
+  opts: { force?: boolean; ruleId?: string; extraVars?: Record<string, string> } = {},
 ): Promise<{ status: "sent" | "failed" | "skipped"; error?: string }> {
   const [rules, settings, client] = await Promise.all([
     listEmailRules(),
@@ -177,7 +177,7 @@ export async function runTrigger(
     : rules.find((r) => r.id === trigger);
   // Log the rendered subject, not the raw template — the log is meant to show
   // what the customer actually saw in their inbox.
-  const vars = rule ? await buildVars(booking) : null;
+  const vars = rule ? { ...(await buildVars(booking)), ...(opts.extraVars ?? {}) } : null;
   const renderedSubject = rule && vars ? renderTemplate(rule.subject, vars) : trigger;
 
   const record = async (status: "sent" | "failed" | "skipped", error?: string) => {
@@ -201,7 +201,14 @@ export async function runTrigger(
   }
 
   const { renderEmail } = await import("./email-html.server");
-  const { text, html } = await renderEmail(rule.body, vars!, booking);
+  // The invoice is built here rather than passed in, so the numbers on the
+  // email come from the same builder the Payments page uses.
+  let invoice;
+  if (trigger === "invoice") {
+    const { buildInvoice } = await import("./invoice");
+    invoice = buildInvoice(booking, settings.travelFee);
+  }
+  const { text, html } = await renderEmail(rule.body, vars!, booking, invoice);
 
   const error = await sendEmail({
     to: client.email,

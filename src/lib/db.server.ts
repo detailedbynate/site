@@ -344,7 +344,9 @@ export type EmailTrigger =
   | "booking_confirmed"
   | "reminder"
   | "after_service"
-  | "booking_cancelled";
+  | "booking_cancelled"
+  /** Sent by hand from Payments, never on a schedule. */
+  | "invoice";
 
 export interface EmailRule {
   /** Built-in ids match EmailTrigger; custom rules get a uuid. */
@@ -804,6 +806,23 @@ You're all set. Here's everything for your {{service}} detail.
 {{policy}}
 
 {{manageLink}}
+
+— {{business}}`,
+  },
+  {
+    id: "invoice",
+    enabled: true,
+    offsetHours: 0,
+    subject: "Invoice {{reference}} — {{business}}",
+    body: `Hi {{name}},
+
+Here's the invoice for your {{service}} detail on {{date}}.
+
+{{invoice}}
+
+{{payLink}}
+
+Thanks for your business.
 
 — {{business}}`,
   },

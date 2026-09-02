@@ -696,7 +696,7 @@ export function BookingWizard({
                 <motion.div
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="glass rounded-3xl p-6"
+                  className="glass rounded-3xl p-4 sm:p-6"
                 >
                   <div className="flex items-center gap-3">
                     <Car className="h-5 w-5 text-primary" />
@@ -729,7 +729,7 @@ export function BookingWizard({
                 <motion.div
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1, transition: { delay: 0.06 } }}
-                  className="glass rounded-3xl p-6"
+                  className="glass rounded-3xl p-4 sm:p-6"
                 >
                   <div className="flex items-center gap-3">
                     <CalendarDays className="h-5 w-5 text-primary" />
@@ -992,11 +992,26 @@ function CustomFieldInput({
   );
 }
 
+/*
+  A summary line.
+
+  On a phone the label sits ABOVE the value, both left-aligned. Side by side
+  it was two columns fighting over 300px: a long add-on list or a full
+  "Friday, September 11 · 1:00 PM" got squeezed into a narrow right-hand
+  column, wrapped raggedly, and — because the panel clips horizontally rather
+  than scrolling — anything that could not wrap was silently cut off at the
+  right edge.
+
+  `min-w-0` is what actually lets the value shrink inside the flex row on
+  desktop; without it a flex item refuses to go below its content width, which
+  is the other half of the same bug. `break-words` handles the unbreakable
+  cases — long email addresses especially.
+*/
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-6">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium text-foreground">{value}</dd>
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-6">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-foreground sm:text-right">{value}</dd>
     </div>
   );
 }
