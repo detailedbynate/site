@@ -441,6 +441,15 @@
 
 @utility animate-aurora {
   animation: aurora-drift 18s ease-in-out infinite;
+  /*
+    Promote to its own compositor layer.
+
+    These are 36rem circles carrying filter: blur(140px), and the keyframes
+    SCALE them. A translation of a blurred layer is free once it is cached,
+    but a scale invalidates that cache — without this hint the browser
+    re-rasterises a 140px blur every frame, for the whole 18s loop, forever.
+  */
+  will-change: transform;
 }
 
 @keyframes pulse-glow {
@@ -493,5 +502,85 @@
   select,
   textarea {
     font-size: 16px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Mobile performance.
+
+   The animations themselves were never the problem — they only move transform
+   and opacity, which is already the cheap path. The cost is WHAT is being
+   moved: every admin card is a backdrop-filtered surface, and they animate in
+   together. On an eight-card page that is eight full blur recomputations per
+   frame for most of a second, which is what made the drawer and the page
+   transitions feel heavy on a phone.
+
+   Blur cost scales with the radius and the area behind it. Halving the radius
+   on small screens is close to invisible at phone pixel density — the frosting
+   reads the same — and roughly halves the work. Desktop keeps every value
+   exactly as designed.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1023px) {
+  .glass,
+  .admin-theme .glass {
+    backdrop-filter: blur(10px) saturate(170%);
+  }
+
+  .liquid-glass,
+  .glass-strong,
+  .admin-theme .liquid-glass,
+  .admin-theme .glass-strong {
+    backdrop-filter: blur(12px) saturate(175%);
+  }
+
+  /*
+    Full-screen overlays are the worst case: the blurred region is the whole
+    viewport, and it has to be recomputed on every frame of the slide-in
+    behind it. At 60% black almost nothing shows through the tint anyway, so
+    dropping the blur here costs nothing visually and buys back the frame.
+  */
+  .admin-panel {
+    backdrop-filter: blur(12px);
+  }
+}
+
+/*
+  Phone-only trims to the two continuously-running effects.
+
+  Neither changes what the animation DOES — the aurora still drifts, the glow
+  still pulses — only how much work each frame costs.
+
+  The aurora wash is a soft background gradient; at 80px it is
+  indistinguishable from 140px on a phone screen, and blur cost scales with
+  radius over a large area. The glow drops its second, wider shadow: one
+  animated shadow repaints instead of two, on elements that are smaller on a
+  phone anyway.
+*/
+@media (max-width: 1023px) {
+  .animate-aurora {
+    filter: blur(80px);
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 26px oklch(0.86 0.11 185 / 0.35); }
+    50% { box-shadow: 0 0 46px oklch(0.86 0.11 185 / 0.6); }
+  }
+}
+
+/*
+  Respect a reduced-motion preference across the whole site.
+
+  Not a performance measure — an accessibility one. Motion honours this for
+  its own animations; this covers the CSS transitions and the decorative
+  keyframe loops (the floating and shimmering utilities) that it cannot see.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -493,7 +493,13 @@ function AdminLayout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+              /* No backdrop blur here on purpose. This covers the whole
+                 viewport, and blurring it forces the browser to recompute the
+                 blur for every frame of the drawer sliding in over it — the
+                 single most expensive thing on the page at the exact moment
+                 it can least afford it. At 60% black the blur was barely
+                 visible anyway. */
+              className="fixed inset-0 z-40 bg-black/60 lg:hidden"
             />
             <motion.aside
               initial={{ x: -280 }}
