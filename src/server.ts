@@ -103,6 +103,13 @@ export default {
       const seo = await staticSeoResponse(request).catch(() => null);
       if (seo) return seo;
 
+      // Admin-only PWA endpoints: manifest, service worker, fallback icon.
+      // Scoped under /admin/ so the customer site is never installable and
+      // never falls under a worker.
+      const { pwaResponse } = await import("./lib/pwa.server");
+      const pwa = await pwaResponse(new URL(request.url)).catch(() => null);
+      if (pwa) return pwa;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

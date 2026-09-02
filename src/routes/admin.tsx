@@ -38,10 +38,30 @@ import { getAvatars } from "@/lib/api/content.functions";
 import type { PublicUser } from "@/lib/auth.server";
 
 export const Route = createFileRoute("/admin")({
+  /*
+    PWA tags live on the ADMIN route, not the root.
+
+    That is what keeps the customer-facing site an ordinary web page: no
+    manifest is advertised there, so no browser offers to install it, and
+    nothing about how it looks or behaves changes. These tags only exist on
+    /admin and below.
+  */
   head: () => ({
     meta: [
       { title: "Admin — Detailed by Nate" },
       { name: "robots", content: "noindex, nofollow" },
+      // Matches --background on the admin surfaces, so the phone's status
+      // bar blends into the app instead of banding against it.
+      { name: "theme-color", content: "#101318" },
+      // iOS ignores the manifest's display mode; these are its equivalents.
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: "Admin" },
+    ],
+    links: [
+      { rel: "manifest", href: "/admin/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/admin/icon" },
     ],
   }),
   component: AdminLayout,
@@ -117,6 +137,22 @@ function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const { theme, toggle, themeRef } = useAdminTheme();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  /*
+    Register the admin service worker.
+
+    Done here rather than in the root so it can only ever happen on /admin —
+    a customer never registers a worker, and the public site is never under
+    one. The scope comes from the script's own path (/admin/), so even if it
+    somehow ran elsewhere it could not intercept a customer page.
+
+    Failure is ignored on purpose: no worker means no install prompt, which
+    is a missing convenience, not a broken admin.
+  */
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin/" }).catch(() => undefined);
+  }, []);
 
   // Client-side guard. The real enforcement is server-side — every admin
   // server function calls requireUser() — so this is purely so an
