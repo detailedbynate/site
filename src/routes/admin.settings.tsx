@@ -6,6 +6,7 @@ import { Building2, Clock, KeyRound, ShieldCheck } from "lucide-react";
 import { getAdminSettings, saveSettings } from "@/lib/api/admin.functions";
 import { TeamCard } from "@/components/admin/TeamCard";
 import { ScheduleCard } from "@/components/admin/ScheduleCard";
+import { PolicyCard } from "@/components/admin/PolicyCard";
 import { changePassword, getMe, updateProfile } from "@/lib/api/auth.functions";
 import { AvatarPicker } from "@/components/admin/AvatarPicker";
 import {
@@ -200,6 +201,8 @@ function SettingsPage() {
         </GlassCard>
 
         <ScheduleCard />
+
+        <PolicyCard />
         <AccountCard />
         <SecurityCard />
         <TeamCard />

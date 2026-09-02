@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarDays, Car, Check, Copy, MapPin, User, X } from "lucide-react";
+import { CalendarDays, Car, Check, Copy, CreditCard, MapPin, User, X } from "lucide-react";
 
 export type ConfirmationDetails = {
   reference: string;
@@ -19,6 +19,11 @@ export type ConfirmationDetails = {
   /** Set only when the server actually honoured a discount code. */
   discountCode?: string;
   discountAmount?: number;
+  /** Deposit taken at booking, and the Stripe link to pay it. */
+  depositAmount?: number;
+  depositUrl?: string;
+  /** The customer's private link to change or cancel this booking. */
+  manageUrl?: string;
 };
 
 export function ConfirmationModal({
@@ -179,6 +184,40 @@ export function ConfirmationModal({
                 ${details.total}
               </span>
             </div>
+
+            {/* Deposit, when one is being taken. Placed under the total so
+                it reads as part of the money, not as an afterthought. */}
+            {details.depositAmount && details.depositUrl ? (
+              <div className="mx-7 mt-4 rounded-2xl border border-primary/40 bg-primary/[0.06] px-4 py-3.5">
+                <p className="text-[13px] font-semibold text-foreground">
+                  ${details.depositAmount} deposit to confirm
+                </p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                  The remaining ${details.total - details.depositAmount} is due on the day. We've
+                  emailed this link too.
+                </p>
+                <a
+                  href={details.depositUrl}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-semibold text-primary-foreground"
+                  style={{ backgroundImage: "var(--gradient-brand)" }}
+                >
+                  <CreditCard className="h-4 w-4" /> Pay the deposit
+                </a>
+              </div>
+            ) : null}
+
+            {details.manageUrl && (
+              <p className="mt-4 px-7 text-[12.5px] leading-relaxed text-muted-foreground">
+                Need to change or cancel?{" "}
+                <a
+                  href={details.manageUrl}
+                  className="font-semibold text-primary underline-offset-2 hover:underline"
+                >
+                  Manage your booking
+                </a>{" "}
+                — the link is in your email too.
+              </p>
+            )}
 
             <div className="px-7 pb-7 pt-5">
               <motion.button

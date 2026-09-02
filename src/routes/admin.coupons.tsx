@@ -14,6 +14,7 @@ import {
   Spinner,
   StatusPill,
   Td,
+  Toggle,
   Th,
   TableWrap,
   inputCls,
@@ -31,6 +32,7 @@ type Draft = {
   value: number;
   active: boolean;
   maxUses?: number;
+  oncePerCustomer?: boolean;
   expiresAt?: string;
 };
 
@@ -69,6 +71,7 @@ function Coupons() {
           value: draft.value,
           active: draft.active,
           maxUses: draft.maxUses || undefined,
+          oncePerCustomer: draft.oncePerCustomer ?? false,
           expiresAt: draft.expiresAt || undefined,
         },
       });
@@ -158,6 +161,7 @@ function Coupons() {
                               value: c.value,
                               active: c.active,
                               maxUses: c.maxUses,
+                              oncePerCustomer: c.oncePerCustomer,
                               expiresAt: c.expiresAt?.slice(0, 10),
                             })
                           }
@@ -273,6 +277,15 @@ function Coupons() {
                       }
                     />
                   </Field>
+                </div>
+
+                <div className="pt-1">
+                  <Toggle
+                    checked={draft.oncePerCustomer ?? false}
+                    onChange={(v: boolean) => setDraft({ ...draft, oncePerCustomer: v })}
+                    label="One use per customer"
+                    hint="Matched on email address. Anyone who has already redeemed it is told so before they book, rather than finding out when the discount silently doesn't apply."
+                  />
                 </div>
 
                 <label className="flex items-center gap-2.5 text-sm text-foreground">

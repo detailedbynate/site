@@ -9,6 +9,7 @@ import {
   type EmailTrigger,
 } from "./db.server";
 import { zonedTimeToISO } from "./availability.server";
+import { describePolicy } from "./policy";
 
 // Transactional email via Resend's HTTP API. Chosen over SMTP specifically
 // because it's a plain fetch() — no nodemailer, no native deps, consistent
@@ -64,7 +65,28 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
     business: settings.businessName,
     businessPhone: settings.contactPhone,
     businessEmail: settings.contactEmail,
+    // Self-service. `manageLink` is the whole point of the confirmation
+    // email: it is how a customer moves or cancels without phoning.
+    manageLink: manageUrl(settings.siteUrl, booking.manageToken),
+    deposit: booking.depositAmount ? `$${booking.depositAmount}` : "",
+    depositLink: booking.depositPaidAt ? "" : (booking.depositUrl ?? ""),
+    balance: booking.depositPaidAt
+      ? `$${Math.max(0, (booking.totalPrice ?? 0) - (booking.depositAmount ?? 0))}`
+      : `$${booking.totalPrice ?? 0}`,
+    policy: describePolicy(settings),
   };
+}
+
+/**
+ * The customer's private link to their own booking.
+ *
+ * Blank when there's no site URL configured or the booking predates tokens —
+ * a template that prints an empty string is better than one that prints a
+ * link to nowhere.
+ */
+function manageUrl(siteUrl: string, token?: string): string {
+  if (!siteUrl || !token) return "";
+  return `${siteUrl.replace(/\/+$/, "")}/manage/${token}`;
 }
 
 /** Placeholder values so a template can be previewed with no bookings yet. */
@@ -76,6 +98,9 @@ export function sampleVars(): Record<string, string> {
     location: "Mobile — 450 Great Northern Rd", vehicle: "2021 BMW M340i",
     business: "Detailed by Nate", businessPhone: "(705) 555-0100",
     businessEmail: "book@detailedbynate.com", notes: "Gate code 4417",
+    manageLink: "https://example.com/manage/preview", deposit: "$111",
+    depositLink: "https://example.com/pay", balance: "$333",
+    policy: "Free cancellation up to 24 hours before.",
   };
 }
 

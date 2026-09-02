@@ -184,6 +184,7 @@ export function BookingWizard({
           serviceId: service,
           addOnIds: picked,
           location,
+          email: customer.email.trim() || undefined,
         },
       });
       if (res.ok) {
@@ -357,6 +358,9 @@ export function BookingWizard({
         // discount the server itself decided to honour.
         total: res.booking.totalPrice - (res.booking.discount ?? 0),
         discountCode: res.appliedCoupon,
+        depositAmount: res.depositAmount || undefined,
+        depositUrl: res.depositUrl,
+        manageUrl: res.manageToken ? `/manage/${res.manageToken}` : undefined,
         discountAmount: res.discount || undefined,
       });
     } catch (err) {

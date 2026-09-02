@@ -518,6 +518,54 @@ export function DetailGroup({ title, children }: { title: string; children: Reac
 }
 
 /** Pill-style on/off control — clearer than a bare switch about its state. */
+/**
+ * A labelled on/off switch with room for an explanation.
+ *
+ * ToggleChip is the compact live/hidden pill used in list rows; this is the
+ * settings-form version, where the label and the reason matter more than
+ * saving space.
+ */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className={`flex items-start gap-3 ${disabled ? "opacity-55" : ""}`}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
+        className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-primary" : "bg-[var(--fill-3)]"
+        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      >
+        <motion.span
+          layout
+          transition={{ type: "spring", stiffness: 500, damping: 32 }}
+          className="absolute top-1 h-4 w-4 rounded-full bg-white shadow"
+          style={{ left: checked ? 24 : 4 }}
+        />
+      </button>
+      <div className="min-w-0">
+        <p className="text-[13.5px] font-semibold text-foreground">{label}</p>
+        {hint && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 export function ToggleChip({
   on,
   onChange,

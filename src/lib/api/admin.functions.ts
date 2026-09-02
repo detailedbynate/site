@@ -296,6 +296,76 @@ export const removeAppointment = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ------------------- Deposits & cancellation policy -------------------
+
+/**
+ * Money rules, kept out of saveSettings so a stray form submission on another
+ * page can never silently change what customers are charged.
+ */
+export const savePolicy = createServerFn({ method: "POST" })
+  .inputValidator(
+    z
+      .object({
+        depositEnabled: z.boolean(),
+        depositType: z.enum(["percent", "fixed"]),
+        depositValue: z.number().min(0).max(100000),
+        selfServiceEnabled: z.boolean(),
+        cancelFreeHours: z.number().int().min(0).max(720),
+        cancelFeeType: z.enum(["percent", "fixed"]),
+        cancelFeeValue: z.number().min(0).max(100000),
+        cancelLockHours: z.number().int().min(0).max(720),
+        rescheduleMinHours: z.number().int().min(0).max(720),
+      })
+      .refine((v) => v.depositType !== "percent" || v.depositValue <= 100, {
+        message: "A percentage deposit can't be more than 100%.",
+        path: ["depositValue"],
+      })
+      .refine((v) => v.cancelFeeType !== "percent" || v.cancelFeeValue <= 100, {
+        message: "A percentage fee can't be more than 100%.",
+        path: ["cancelFeeValue"],
+      })
+      .refine((v) => v.cancelLockHours === 0 || v.cancelLockHours <= v.cancelFreeHours, {
+        message:
+          "The no-online-cancelling window must be shorter than the free window, or it swallows it entirely.",
+        path: ["cancelLockHours"],
+      }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings, getSettings } = await import("../db.server");
+    const { isStripeConfigured } = await import("../stripe.server");
+    const { requireRole } = await import("../auth.server");
+    await requireRole("owner");
+
+    const current = await getSettings();
+    // Refuse to switch on anything that needs Stripe before Stripe exists —
+    // otherwise a customer meets a deposit screen that cannot take money.
+    if ((data.depositEnabled || data.cancelFeeValue > 0) && !isStripeConfigured(current)) {
+      throw new Error("Connect Stripe under Integrations before taking deposits or fees.");
+    }
+
+    return { settings: await updateSettings(data) };
+  });
+
+export const getPolicy = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const { isStripeConfigured } = await import("../stripe.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+  const s = await getSettings();
+  return {
+    stripeReady: isStripeConfigured(s),
+    depositEnabled: s.depositEnabled,
+    depositType: s.depositType,
+    depositValue: s.depositValue,
+    selfServiceEnabled: s.selfServiceEnabled,
+    cancelFreeHours: s.cancelFreeHours,
+    cancelFeeType: s.cancelFeeType,
+    cancelFeeValue: s.cancelFeeValue,
+    cancelLockHours: s.cancelLockHours,
+    rescheduleMinHours: s.rescheduleMinHours,
+  };
+});
+
 // --------------------------- Time off ---------------------------------
 
 export const listTimeOffEntries = createServerFn({ method: "GET" }).handler(async () => {
@@ -564,6 +634,7 @@ export const saveCoupon = createServerFn({ method: "POST" })
       value: z.number().min(1).max(10000),
       active: z.boolean().default(true),
       maxUses: z.number().int().min(1).max(100000).optional(),
+      oncePerCustomer: z.boolean().default(false),
       expiresAt: z.string().optional(),
     }),
   )
@@ -589,6 +660,7 @@ export const saveCoupon = createServerFn({ method: "POST" })
         active: data.active,
         timesUsed: clash?.timesUsed ?? 0,
         maxUses: data.maxUses,
+        oncePerCustomer: data.oncePerCustomer,
         expiresAt: data.expiresAt,
       }),
     };

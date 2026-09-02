@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DEFAULT_ADD_ONS, DEFAULT_SERVICES, type LocationChoice } from "./services";
@@ -85,6 +85,18 @@ export interface Booking {
   cancelledAt?: string;
   cancelReason?: string;
   googleEventId?: string;
+  /** Unguessable token letting the customer open this booking from a link. */
+  manageToken?: string;
+  /** Deposit taken at booking time, and the Stripe link it was taken through. */
+  depositAmount?: number;
+  depositPaidAt?: string;
+  depositUrl?: string;
+  depositLinkId?: string;
+  /** Fee for cancelling inside the free window. */
+  cancelFeeAmount?: number;
+  cancelFeePaidAt?: string;
+  cancelFeeUrl?: string;
+  cancelFeeLinkId?: string;
   /** Which staff member is doing the job (see `agents`). */
   agentId?: string;
   /** Which shop/zone it belongs to (see `locations`). */
@@ -179,6 +191,29 @@ export interface Settings {
    * previous thing ends.
    */
   bufferMinutes: number;
+
+  // --- Deposits ---
+  /** Take a deposit at booking. Off by default; nothing changes until set. */
+  depositEnabled: boolean;
+  /** "percent" reads depositValue as 0-100 of the total; "fixed" as dollars. */
+  depositType: "percent" | "fixed";
+  depositValue: number;
+
+  // --- Cancellation policy ---
+  /** Let customers cancel and reschedule themselves from a link. */
+  selfServiceEnabled: boolean;
+  /** Free cancellation up to this many hours before the start. */
+  cancelFreeHours: number;
+  /** Inside cancelFreeHours, charge this to cancel. 0 = free anyway. */
+  cancelFeeType: "percent" | "fixed";
+  cancelFeeValue: number;
+  /**
+   * Inside this many hours, online cancellation is refused outright — they
+   * have to call. Set below cancelFreeHours or it swallows the fee window.
+   */
+  cancelLockHours: number;
+  /** Customers may move a booking until this many hours before it starts. */
+  rescheduleMinHours: number;
   /**
    * Hard cap on jobs accepted per day, whatever the clock says. 0 = no cap.
    * Slot maths alone will happily sell four details in a day that you only
@@ -475,6 +510,8 @@ export interface Coupon {
   active: boolean;
   timesUsed: number;
   maxUses?: number;
+  /** One redemption per customer email, on top of any total cap. */
+  oncePerCustomer?: boolean;
   expiresAt?: string;
   createdAt: string;
 }
@@ -494,6 +531,15 @@ export const DEFAULT_SETTINGS: Settings = {
   serviceArea: "Sault Ste. Marie area",
   timezone: process.env.BUSINESS_TIMEZONE ?? "America/Toronto",
   bufferMinutes: Number(process.env.BOOKING_BUFFER_MINUTES ?? 30),
+  depositEnabled: false,
+  depositType: "percent" as const,
+  depositValue: 25,
+  selfServiceEnabled: true,
+  cancelFreeHours: 24,
+  cancelFeeType: "percent" as const,
+  cancelFeeValue: 0,
+  cancelLockHours: 0,
+  rescheduleMinHours: 24,
   maxJobsPerDay: Number(process.env.BOOKING_MAX_PER_DAY ?? 0),
   openHour: Number(process.env.BUSINESS_OPEN_HOUR ?? 8),
   closeHour: Number(process.env.BUSINESS_CLOSE_HOUR ?? 18),
@@ -683,7 +729,10 @@ Vehicle: {{vehicle}}
 Total: {{total}}
 Reference: {{reference}}
 
-Reply to this email if anything changes.
+Need to change or cancel? Use your booking link:
+{{manageLink}}
+
+{{policy}}
 
 — {{business}}`,
   },
@@ -1003,6 +1052,21 @@ CREATE TABLE IF NOT EXISTS faqs (
   createdAt TEXT NOT NULL
 );
 
+-- Who redeemed which coupon. The timesUsed counter can answer "how many
+-- times", never "has this customer already used it", which is what a
+-- one-per-customer code needs. Email is stored lowercased so casing cannot
+-- be used to spend a code twice. (No backticks in here: this whole schema is
+-- one template literal.)
+CREATE TABLE IF NOT EXISTS couponRedemptions (
+  id        TEXT PRIMARY KEY,
+  couponId  TEXT NOT NULL,
+  email     TEXT NOT NULL,
+  bookingId TEXT NOT NULL DEFAULT '',
+  createdAt TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_redemption_lookup ON couponRedemptions(couponId, email);
+
 -- Time off. Days or part-days you are not available, set from the admin.
 -- Without this the only way to block time was an event in Google Calendar,
 -- which is useless before Google is connected and unavailable to anyone who
@@ -1033,6 +1097,20 @@ CREATE INDEX IF NOT EXISTS idx_expenses_booking ON expenses(bookingId);
  * repeatedly because we check first.
  */
 const ADDED_COLUMNS: [table: string, column: string, ddl: string][] = [
+  // Self-service: an unguessable per-booking token, so a customer can open
+  // their own booking from a link without an account or a login.
+  ["bookings", "manageToken", "TEXT"],
+  // Deposit taken at booking, and the Stripe link it was taken through.
+  ["bookings", "depositAmount", "REAL NOT NULL DEFAULT 0"],
+  ["bookings", "depositPaidAt", "TEXT"],
+  ["bookings", "depositUrl", "TEXT"],
+  ["bookings", "depositLinkId", "TEXT"],
+  // Fee charged for cancelling inside the free window.
+  ["bookings", "cancelFeeAmount", "REAL NOT NULL DEFAULT 0"],
+  ["bookings", "cancelFeePaidAt", "TEXT"],
+  ["bookings", "cancelFeeUrl", "TEXT"],
+  ["bookings", "cancelFeeLinkId", "TEXT"],
+  ["coupons", "oncePerCustomer", "INTEGER NOT NULL DEFAULT 0"],
   ["bookings", "agentId", "TEXT"],
   ["bookings", "locationId", "TEXT"],
   // Profile pictures. Point at a row in `photos`; initials are the fallback.
@@ -1273,6 +1351,15 @@ function toBooking(r: Row): Booking {
     cancelledAt: undef(r.cancelledAt),
     cancelReason: undef(r.cancelReason),
     googleEventId: undef(r.googleEventId),
+    manageToken: undef(r.manageToken),
+    depositAmount: r.depositAmount || undefined,
+    depositPaidAt: undef(r.depositPaidAt),
+    depositUrl: undef(r.depositUrl),
+    depositLinkId: undef(r.depositLinkId),
+    cancelFeeAmount: r.cancelFeeAmount || undefined,
+    cancelFeePaidAt: undef(r.cancelFeePaidAt),
+    cancelFeeUrl: undef(r.cancelFeeUrl),
+    cancelFeeLinkId: undef(r.cancelFeeLinkId),
     agentId: undef(r.agentId),
     locationId: undef(r.locationId),
     createdAt: r.createdAt,
@@ -1339,6 +1426,7 @@ function toCoupon(r: Row): Coupon {
     active: !!r.active,
     timesUsed: r.timesUsed,
     maxUses: undef(r.maxUses),
+    oncePerCustomer: !!r.oncePerCustomer,
     expiresAt: undef(r.expiresAt),
     createdAt: r.createdAt,
   };
@@ -1712,7 +1800,8 @@ export async function deleteClient(id: string): Promise<void> {
 
 const BOOKING_COLUMNS = `id,clientId,serviceId,serviceTitle,date,startTime,durationMinutes,status,
   reference,addOnIds,addOnTitles,location,address,vehicle,totalPrice,tip,discount,paymentStatus,
-  amountPaid,paymentMethod,photoIds,customFields,notes,cancelledAt,cancelReason,googleEventId,createdAt`;
+  amountPaid,paymentMethod,photoIds,customFields,notes,cancelledAt,cancelReason,googleEventId,
+  manageToken,createdAt`;
 
 export async function listBookings(): Promise<Booking[]> {
   const rows = sql(
@@ -1789,12 +1878,15 @@ export async function addBooking(input: {
       discount: input.discount,
       notes: input.notes,
       googleEventId: input.googleEventId,
+      // 24 bytes of randomness, base64url. Long enough that guessing one is
+      // not a threat, short enough to survive being pasted into an email.
+      manageToken: randomBytes(24).toString("base64url"),
       createdAt: new Date().toISOString(),
     };
 
     sql(
       `INSERT INTO bookings (${BOOKING_COLUMNS})
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       booking.id,
       booking.clientId,
@@ -1822,9 +1914,72 @@ export async function addBooking(input: {
       null,
       null,
       booking.googleEventId ?? null,
+      booking.manageToken ?? null,
       booking.createdAt,
     );
     return booking;
+  });
+}
+
+/** Look a booking up by its customer-facing token. */
+export async function findBookingByToken(token: string): Promise<Booking | undefined> {
+  if (!token) return undefined;
+  const row = sql("SELECT * FROM bookings WHERE manageToken = ?").get(token) as Row | undefined;
+  return row ? toBooking(row) : undefined;
+}
+
+/**
+ * Give an older booking a manage token. Bookings made before self-service
+ * existed have none, so their confirmation links would otherwise 404.
+ */
+export async function ensureManageToken(bookingId: string): Promise<string | undefined> {
+  return tx(() => {
+    const row = sql("SELECT * FROM bookings WHERE id = ?").get(bookingId) as Row | undefined;
+    if (!row) return undefined;
+    if (row.manageToken) return String(row.manageToken);
+    const token = randomBytes(24).toString("base64url");
+    sql("UPDATE bookings SET manageToken = ? WHERE id = ?").run(token, bookingId);
+    return token;
+  });
+}
+
+/** Record the deposit or cancellation-fee state on a booking. */
+export async function updateBookingCharges(
+  bookingId: string,
+  patch: Partial<
+    Pick<
+      Booking,
+      | "depositAmount"
+      | "depositPaidAt"
+      | "depositUrl"
+      | "depositLinkId"
+      | "cancelFeeAmount"
+      | "cancelFeePaidAt"
+      | "cancelFeeUrl"
+      | "cancelFeeLinkId"
+    >
+  >,
+): Promise<Booking | undefined> {
+  return tx(() => {
+    const row = sql("SELECT * FROM bookings WHERE id = ?").get(bookingId) as Row | undefined;
+    if (!row) return undefined;
+    const next = merge(row, patch);
+    sql(
+      `UPDATE bookings SET depositAmount = ?, depositPaidAt = ?, depositUrl = ?,
+         depositLinkId = ?, cancelFeeAmount = ?, cancelFeePaidAt = ?,
+         cancelFeeUrl = ?, cancelFeeLinkId = ? WHERE id = ?`,
+    ).run(
+      next.depositAmount ?? 0,
+      next.depositPaidAt ?? null,
+      next.depositUrl ?? null,
+      next.depositLinkId ?? null,
+      next.cancelFeeAmount ?? 0,
+      next.cancelFeePaidAt ?? null,
+      next.cancelFeeUrl ?? null,
+      next.cancelFeeLinkId ?? null,
+      bookingId,
+    );
+    return toBooking(next);
   });
 }
 
@@ -2112,13 +2267,13 @@ export async function upsertCoupon(
       createdAt: input.createdAt ?? new Date().toISOString(),
     };
     sql(
-      `INSERT INTO coupons (id,code,type,value,active,timesUsed,maxUses,expiresAt,createdAt)
-       VALUES (?,?,?,?,?,?,?,?,?)
+      `INSERT INTO coupons (id,code,type,value,active,timesUsed,maxUses,oncePerCustomer,expiresAt,createdAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET
          code=excluded.code, type=excluded.type, value=excluded.value,
          active=excluded.active, timesUsed=excluded.timesUsed,
-         maxUses=excluded.maxUses, expiresAt=excluded.expiresAt,
-         createdAt=excluded.createdAt`,
+         maxUses=excluded.maxUses, oncePerCustomer=excluded.oncePerCustomer,
+         expiresAt=excluded.expiresAt, createdAt=excluded.createdAt`,
     ).run(
       record.id,
       record.code,
@@ -2127,6 +2282,7 @@ export async function upsertCoupon(
       record.active ? 1 : 0,
       record.timesUsed,
       record.maxUses ?? null,
+      record.oncePerCustomer ? 1 : 0,
       record.expiresAt ?? null,
       record.createdAt,
     );
@@ -2143,16 +2299,52 @@ export async function deleteCoupon(id: string): Promise<void> {
  * simultaneous bookings can't both take the last use of a limited code.
  * Returns false if the code is exhausted, in which case nothing was counted.
  */
-export async function redeemCoupon(id: string): Promise<boolean> {
+/**
+ * Claim one use of a coupon, recording who claimed it.
+ *
+ * Both caps are re-checked INSIDE the transaction, so two bookings racing
+ * for the last use of a limited code cannot both win, and a customer double-
+ * submitting a one-per-customer code cannot spend it twice.
+ */
+export async function redeemCoupon(
+  id: string,
+  by?: { email?: string; bookingId?: string },
+): Promise<boolean> {
   return tx(() => {
-    const row = sql("SELECT timesUsed, maxUses, active FROM coupons WHERE id = ?").get(id) as
-      | Row
-      | undefined;
+    const row = sql(
+      "SELECT timesUsed, maxUses, active, oncePerCustomer FROM coupons WHERE id = ?",
+    ).get(id) as Row | undefined;
     if (!row || !row.active) return false;
     if (row.maxUses != null && row.timesUsed >= row.maxUses) return false;
+
+    const email = (by?.email ?? "").trim().toLowerCase();
+    if (row.oncePerCustomer) {
+      // No email means we cannot tell customers apart, so a one-per-customer
+      // code is refused rather than silently becoming unlimited.
+      if (!email) return false;
+      const seen = sql(
+        "SELECT 1 FROM couponRedemptions WHERE couponId = ? AND email = ?",
+      ).get(id, email);
+      if (seen) return false;
+    }
+
     sql("UPDATE coupons SET timesUsed = timesUsed + 1 WHERE id = ?").run(id);
+    if (email) {
+      sql(
+        "INSERT INTO couponRedemptions (id,couponId,email,bookingId,createdAt) VALUES (?,?,?,?,?)",
+      ).run(randomUUID(), id, email, by?.bookingId ?? "", new Date().toISOString());
+    }
     return true;
   });
+}
+
+/** Has this email already redeemed this coupon? */
+export async function hasRedeemedCoupon(couponId: string, email: string): Promise<boolean> {
+  const clean = email.trim().toLowerCase();
+  if (!clean) return false;
+  return Boolean(
+    sql("SELECT 1 FROM couponRedemptions WHERE couponId = ? AND email = ?").get(couponId, clean),
+  );
 }
 
 // ---------------------------- Payments / tips -------------------------
@@ -3073,7 +3265,7 @@ function importLegacyJSON(): void {
     for (const b of parsed.bookings ?? []) {
       d.prepare(
         `INSERT INTO bookings (${BOOKING_COLUMNS})
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).run(
         b.id,
         b.clientId,
@@ -3101,6 +3293,8 @@ function importLegacyJSON(): void {
         b.cancelledAt ?? null,
         b.cancelReason ?? null,
         b.googleEventId ?? null,
+        // Imported bookings get a token too, so their confirmation links work.
+        randomBytes(24).toString("base64url"),
         b.createdAt,
       );
     }

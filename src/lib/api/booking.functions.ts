@@ -119,8 +119,8 @@ export const getAvailability = createServerFn({ method: "GET" })
  * for a bad code — it returns a reason, because "SPRING25 has expired" is a
  * more useful thing to show than a generic failure.
  */
-async function evaluateCoupon(code: string, subtotal: number) {
-  const { findCouponByCode } = await import("../db.server");
+async function evaluateCoupon(code: string, subtotal: number, email?: string) {
+  const { findCouponByCode, hasRedeemedCoupon } = await import("../db.server");
   const { applyDiscount } = await import("../services");
 
   const trimmed = code.trim();
@@ -137,6 +137,9 @@ async function evaluateCoupon(code: string, subtotal: number) {
   }
   if (coupon.maxUses != null && coupon.timesUsed >= coupon.maxUses) {
     return { ok: false as const, reason: "That code has been fully redeemed." };
+  }
+  if (coupon.oncePerCustomer && email && (await hasRedeemedCoupon(coupon.id, email))) {
+    return { ok: false as const, reason: "You've already used that code." };
   }
 
   const newTotal = applyDiscount(subtotal, { type: coupon.type, value: coupon.value });
@@ -164,13 +167,17 @@ export const checkCoupon = createServerFn({ method: "POST" })
       serviceId: idSchema,
       addOnIds: addOnIdsSchema,
       location: z.enum(["mobile", "shop"]).nullable().default(null),
+      /** Known by the Review step, where the code is entered. Lets a
+          one-per-customer code be refused in the preview rather than
+          silently dropped at submit. */
+      email: z.string().max(255).optional(),
     }),
   )
   .handler(async ({ data }) => {
     // Price the order server-side; a client-supplied subtotal could be forged
     // to inflate a percentage discount.
     const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location);
-    const result = await evaluateCoupon(data.code, price);
+    const result = await evaluateCoupon(data.code, price, data.email);
 
     if (!result.ok) return { ok: false as const, reason: result.reason };
     return {
@@ -253,12 +260,13 @@ export const createBooking = createServerFn({ method: "POST" })
     let discount = 0;
     let appliedCoupon: string | undefined;
     if (data.couponCode?.trim()) {
-      const result = await evaluateCoupon(data.couponCode, totalPrice);
+      const result = await evaluateCoupon(data.couponCode, totalPrice, data.email);
       if (result.ok) {
         const { redeemCoupon } = await import("../db.server");
-        // redeemCoupon re-checks the cap inside its transaction, so two
-        // bookings racing for the last use can't both win.
-        if (await redeemCoupon(result.couponId)) {
+        // redeemCoupon re-checks BOTH caps inside its transaction, so two
+        // bookings racing for the last use can't both win, and a double
+        // submit can't spend a one-per-customer code twice.
+        if (await redeemCoupon(result.couponId, { email: data.email })) {
           discount = result.discount;
           appliedCoupon = result.code;
         }
@@ -327,6 +335,43 @@ export const createBooking = createServerFn({ method: "POST" })
       await setBookingCustomFields(booking.id, data.customFields);
     }
 
+    /*
+      Deposit.
+
+      Created after the booking exists, and never allowed to fail it: if
+      Stripe is down or misconfigured the job is still booked and the owner
+      can chase the deposit by hand. The alternative — refusing the booking —
+      loses real work over a payments hiccup.
+    */
+    let depositUrl: string | undefined;
+    let depositAmount = 0;
+    const { getSettings: readSettings } = await import("../db.server");
+    const settings = await readSettings();
+    if (settings.depositEnabled) {
+      const { depositFor } = await import("../policy");
+      depositAmount = depositFor(settings, booking.totalPrice);
+      if (depositAmount > 0) {
+        try {
+          const { createPaymentLink } = await import("../stripe.server");
+          const { updateBookingCharges } = await import("../db.server");
+          const link = await createPaymentLink({
+            amount: depositAmount,
+            description: `Deposit — ${booking.serviceTitle} (${booking.reference})`,
+            reference: booking.reference,
+          });
+          depositUrl = link.url;
+          await updateBookingCharges(booking.id, {
+            depositAmount,
+            depositUrl: link.url,
+            depositLinkId: link.id,
+          });
+        } catch (err) {
+          console.error("Couldn't create the deposit link:", err);
+          depositAmount = 0;
+        }
+      }
+    }
+
     // Confirmation email. Fire-and-forget and never throws — the booking is
     // already saved, and a mail outage must not fail the customer's booking.
     void import("../email.server")
@@ -341,7 +386,17 @@ export const createBooking = createServerFn({ method: "POST" })
 
     // `appliedCoupon` is reported back so the confirmation can say the code
     // landed — and, just as importantly, stay silent if it quietly didn't.
-    return { booking, client, appliedCoupon, discount };
+    return {
+      booking,
+      client,
+      appliedCoupon,
+      discount,
+      // Shown on the confirmation screen and mailed out. Absent when
+      // deposits are off, or when Stripe couldn't produce a link.
+      depositAmount,
+      depositUrl,
+      manageToken: booking.manageToken,
+    };
   });
 
 /**

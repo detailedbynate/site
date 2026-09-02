@@ -115,3 +115,65 @@ export async function createPaymentLink(input: {
 
   return { url: link.url, id: link.id };
 }
+
+/**
+ * Has a Payment Link actually been paid?
+ *
+ * This project takes no inbound Stripe webhooks by design, so payment state
+ * is pulled rather than pushed: ask Stripe for the Checkout Sessions created
+ * from the link and see whether any completed. Called when a customer lands
+ * back on their booking, when the admin opens Payments, and on the existing
+ * background tick — so it settles within a minute or two without a public
+ * endpoint to secure.
+ *
+ * Returns null when Stripe isn't configured or the link is unknown, which
+ * callers must treat as "don't know", never as "unpaid".
+ */
+export async function isPaymentLinkPaid(
+  linkId: string,
+): Promise<{ paid: boolean; amount: number; paidAt?: string } | null> {
+  if (!linkId) return null;
+  const settings = await getSettings();
+  const key = settings.stripeSecretKey.trim();
+  if (!key) return null;
+
+  try {
+    const res = await stripe(
+      `/checkout/sessions?payment_link=${encodeURIComponent(linkId)}&limit=10`,
+      key,
+    );
+    const sessions: any[] = res.data ?? [];
+    const done = sessions.find((x) => x.payment_status === "paid");
+    if (!done) return { paid: false, amount: 0 };
+    return {
+      paid: true,
+      amount: (done.amount_total ?? 0) / 100,
+      paidAt: done.created ? new Date(done.created * 1000).toISOString() : undefined,
+    };
+  } catch (err) {
+    console.error("Stripe payment lookup failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Stop a Payment Link being used again.
+ *
+ * Deactivating rather than deleting: Stripe keeps links forever, and a live
+ * deposit link for a cancelled booking is a way to be paid for work that is
+ * not happening.
+ */
+export async function deactivatePaymentLink(linkId: string): Promise<void> {
+  if (!linkId) return;
+  const settings = await getSettings();
+  const key = settings.stripeSecretKey.trim();
+  if (!key) return;
+  try {
+    await stripe(`/payment_links/${encodeURIComponent(linkId)}`, key, {
+      method: "POST",
+      body: form({ active: "false" }),
+    });
+  } catch (err) {
+    console.error("Couldn't deactivate payment link:", err);
+  }
+}
