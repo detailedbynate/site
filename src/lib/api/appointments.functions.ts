@@ -212,6 +212,211 @@ export const updateAppointment = createServerFn({ method: "POST" })
     return { booking, recomputed: computed, durationMinutes };
   });
 
+// ====================== Creating a booking by hand =======================
+
+/**
+ * Everything the "New appointment" form needs in one call: the bookable
+ * catalog, the mobile fee, and existing customers to pick from.
+ */
+export const getBookingFormOptions = createServerFn({ method: "GET" }).handler(async () => {
+  const { listServices, listAddOns, getSettings, listClients } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+
+  const [services, addOns, settings, clients] = await Promise.all([
+    listServices(),
+    listAddOns(),
+    getSettings(),
+    listClients(),
+  ]);
+
+  return {
+    services: services
+      .filter((s) => s.active)
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        priceValue: s.priceValue,
+        durationMinutes: s.durationMinutes,
+      })),
+    addOns: addOns
+      .filter((a) => a.active)
+      .map((a) => ({ id: a.id, name: a.name, price: a.price, durationMinutes: a.durationMinutes })),
+    travelFee: settings.travelFee,
+    clients: clients
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        // Placeholder addresses (imports, phone bookings) aren't real inboxes.
+        email: c.email.endsWith(".local") ? "" : c.email,
+        phone: c.phone,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+});
+
+/** Open start times for a new booking, sized from the live catalog. */
+export const getOpenSlots = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      date: dateSchema,
+      serviceId: idSchema,
+      addOnIds: z.array(idSchema).max(20).default([]),
+      location: z.enum(["mobile", "shop"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { listServices, listAddOns } = await import("../db.server");
+    const { getAvailableSlots } = await import("../availability.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const [services, addOns] = await Promise.all([listServices(), listAddOns()]);
+    const service = services.find((s) => s.id === data.serviceId);
+    if (!service) return { slots: [] };
+    const durationMinutes =
+      service.durationMinutes +
+      addOns
+        .filter((a) => data.addOnIds.includes(a.id))
+        .reduce((s, a) => s + a.durationMinutes, 0);
+
+    const slots = await getAvailableSlots(data.date, durationMinutes, undefined, data.location);
+    return { slots: slots.map((s) => ({ startTime: s.startTime })), durationMinutes };
+  });
+
+/**
+ * Book a job from the admin — a phone call, a walk-in, a regular.
+ *
+ * Priced from the live catalog exactly like a customer booking, with the
+ * same optional override as editing. The slot is checked against real
+ * availability unless `force` is set: the owner can knowingly book outside
+ * hours or inside the notice period, which a customer never can.
+ *
+ * No deposit is requested — the owner arranged this job directly.
+ */
+export const createAppointment = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      /** An existing customer. Omit to create one from name/email/phone. */
+      clientId: idSchema.optional(),
+      name: z.string().max(120).default(""),
+      email: z.string().max(255).default(""),
+      phone: z.string().max(30).default(""),
+      date: dateSchema,
+      startTime: timeSchema,
+      serviceId: idSchema,
+      addOnIds: z.array(idSchema).max(20).default([]),
+      location: z.enum(["mobile", "shop"]),
+      address: z.string().max(200).optional(),
+      vehicle: z.object({
+        make: z.string().max(40).default(""),
+        model: z.string().max(40).default(""),
+        year: z.string().max(4).default(""),
+        color: z.string().max(30).default(""),
+      }),
+      notes: z.string().max(1000).optional(),
+      priceOverride: z.number().min(0).max(1000000).optional(),
+      /** Skip the availability check — outside hours, notice, or overlapping. */
+      force: z.boolean().default(false),
+      sendConfirmation: z.boolean().default(true),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { findClientById, findOrCreateClient, addBooking, listServices, listAddOns, getSettings } =
+      await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const [services, addOns, settings] = await Promise.all([
+      listServices(),
+      listAddOns(),
+      getSettings(),
+    ]);
+
+    const service = services.find((s) => s.id === data.serviceId);
+    if (!service) throw new Error("That package no longer exists.");
+    const chosen = addOns.filter((a) => data.addOnIds.includes(a.id));
+
+    if (data.location === "mobile" && (data.address?.trim().length ?? 0) < 5) {
+      throw new Error("A service address is required for mobile jobs.");
+    }
+
+    let client;
+    if (data.clientId) {
+      client = await findClientById(data.clientId);
+      if (!client) throw new Error("That customer no longer exists.");
+    } else {
+      const name = data.name.trim();
+      if (!name) throw new Error("Enter the customer's name.");
+      const email = data.email.trim();
+      if (email && !z.string().email().safeParse(email).success) {
+        throw new Error("That email address doesn't look right.");
+      }
+      client = await findOrCreateClient({
+        name,
+        // Phone bookings often come without an email. Customers are keyed on
+        // email, so a unique placeholder keeps each one their own record —
+        // the same approach as the CSV import.
+        email: email || `no-email-${crypto.randomUUID().slice(0, 8)}@phone.local`,
+        phone: data.phone.trim(),
+      });
+    }
+
+    const travel = data.location === "mobile" ? settings.travelFee : 0;
+    const computed = service.priceValue + chosen.reduce((s, a) => s + a.price, 0) + travel;
+    const durationMinutes =
+      service.durationMinutes + chosen.reduce((s, a) => s + a.durationMinutes, 0);
+
+    if (!data.force) {
+      const { getAvailableSlots } = await import("../availability.server");
+      const slots = await getAvailableSlots(data.date, durationMinutes, undefined, data.location);
+      if (!slots.some((s) => s.startTime === data.startTime)) {
+        throw new Error(
+          "That time isn't open any more. Pick another, or use a custom time to book it anyway.",
+        );
+      }
+    }
+
+    const v = data.vehicle;
+    const booking = await addBooking({
+      clientId: client.id,
+      serviceId: service.id,
+      serviceTitle: service.title,
+      date: data.date,
+      startTime: data.startTime,
+      durationMinutes,
+      addOnIds: chosen.map((a) => a.id),
+      addOnTitles: chosen.map((a) => a.name),
+      location: data.location,
+      address: data.location === "mobile" ? data.address?.trim() : undefined,
+      vehicle: [v.make, v.model, v.year, v.color].some((x) => x.trim())
+        ? { make: v.make.trim(), model: v.model.trim(), year: v.year.trim(), color: v.color.trim() }
+        : undefined,
+      totalPrice: data.priceOverride ?? computed,
+      notes: data.notes?.trim() || undefined,
+    });
+
+    // Same non-fatal contract as every other booking path: the calendar
+    // entry, the email and the webhook must never undo a saved booking.
+    const { syncBookingToCalendar } = await import("../calendar-sync.server");
+    await syncBookingToCalendar(booking.id);
+
+    if (data.sendConfirmation && !client.email.endsWith(".local")) {
+      void import("../email.server")
+        .then(({ runTriggerAndCustom }) => runTriggerAndCustom("booking_confirmed", booking))
+        .catch(() => undefined);
+    }
+    // The team hears about it whether or not the customer is emailed.
+    void import("../email.server")
+      .then(({ notifyTeam }) => notifyTeam(booking))
+      .catch(() => undefined);
+    void import("../webhooks.server")
+      .then(({ sendWebhook }) => sendWebhook("booking_created", booking))
+      .catch(() => undefined);
+
+    return { booking };
+  });
+
 // ========================== CSV import ==================================
 
 const importRow = z.object({

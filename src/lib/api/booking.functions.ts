@@ -397,6 +397,11 @@ export const createBooking = createServerFn({ method: "POST" })
       .then(({ runTriggerAndCustom }) => runTriggerAndCustom("booking_confirmed", booking))
       .catch(() => undefined);
 
+    // Heads-up to the team (Automation → Team notifications). Same contract.
+    void import("../email.server")
+      .then(({ notifyTeam }) => notifyTeam(booking))
+      .catch(() => undefined);
+
     // Same contract for the outgoing webhook: a notification, not part of
     // the transaction.
     void import("../webhooks.server")

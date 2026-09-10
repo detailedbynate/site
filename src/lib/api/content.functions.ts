@@ -299,6 +299,11 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     subtext: s.heroSubtext,
     statClients: s.statClients,
     statVehicles: s.statVehicles,
+    statClientsLabel: s.statClientsLabel,
+    statVehiclesLabel: s.statVehiclesLabel,
+    statRatingLabel: s.statRatingLabel,
+    badge: s.heroBadge,
+    pill: s.heroPill,
   };
 });
 

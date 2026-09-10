@@ -15,6 +15,7 @@ import {
   StickyNote,
   Trash2,
   Pencil,
+  Plus,
   Undo2,
   Upload,
   UserCog,
@@ -37,6 +38,7 @@ import { PhotoUploader, QuickPhotoCapture } from "@/components/admin/PhotoUpload
 import { TabBar } from "@/components/admin/TabBar";
 import { EditorModal, FieldRow } from "@/components/admin/EditorModal";
 import { AppointmentImport } from "@/components/admin/AppointmentImport";
+import { NewAppointmentDialog } from "@/components/admin/NewAppointmentDialog";
 import {
   getAppointmentDetail,
   updateAppointment,
@@ -97,6 +99,7 @@ function Appointments() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [editing, setEditing] = useState<EditDraft | null>(null);
   const [importing, setImporting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [photoRefresh, setPhotoRefresh] = useState(0);
 
   const load = async () => {
@@ -190,10 +193,25 @@ function Appointments() {
         title="Appointments"
         subtitle="Click any booking to see everything, edit it, or move it. Cancelling frees its slot for new bookings straight away."
         actions={
-          <Button onClick={() => setImporting(true)}>
-            <Upload className="h-3.5 w-3.5" /> Import past jobs
-          </Button>
+          <>
+            <Button onClick={() => setImporting(true)}>
+              <Upload className="h-3.5 w-3.5" /> Import past jobs
+            </Button>
+            <Button variant="primary" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> New appointment
+            </Button>
+          </>
         }
+      />
+
+      <NewAppointmentDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={async (id) => {
+          setCreating(false);
+          await load();
+          setOpenId(id);
+        }}
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-3">

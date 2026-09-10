@@ -92,6 +92,11 @@ function Seo() {
           heroSubtext: s.heroSubtext,
           statClients: s.statClients,
           statVehicles: s.statVehicles,
+          statClientsLabel: s.statClientsLabel,
+          statVehiclesLabel: s.statVehiclesLabel,
+          statRatingLabel: s.statRatingLabel,
+          heroBadge: s.heroBadge,
+          heroPill: s.heroPill,
         },
       });
       setS(res.settings);
@@ -307,7 +312,21 @@ function Seo() {
           The big text customers land on. The second line keeps the accent colour.
         </p>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div className="mt-5">
+          <Field
+            label="Badge above the headline"
+            hint="The small pill at the very top, e.g. a seasonal message. Leave blank to hide it."
+          >
+            <input
+              className={inputCls}
+              value={s.heroBadge}
+              maxLength={80}
+              onChange={(e) => set("heroBadge", e.target.value)}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="Headline, first line">
             <input
               className={inputCls}
@@ -337,8 +356,12 @@ function Seo() {
           </Field>
         </div>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Clients served" hint="The counter that animates up.">
+        <p className="mt-6 text-[13px] font-semibold text-foreground">Pills under the buttons</p>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">
+          Leave any label blank to hide that pill.
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <Field label="First counter — number" hint="Animates up from zero, with a + after it.">
             <input
               className={inputCls}
               type="number"
@@ -347,7 +370,16 @@ function Seo() {
               onChange={(e) => set("statClients", Number(e.target.value))}
             />
           </Field>
-          <Field label="Vehicles detailed">
+          <Field label="First counter — label">
+            <input
+              className={inputCls}
+              value={s.statClientsLabel}
+              maxLength={40}
+              placeholder="clients served"
+              onChange={(e) => set("statClientsLabel", e.target.value)}
+            />
+          </Field>
+          <Field label="Second counter — number">
             <input
               className={inputCls}
               type="number"
@@ -356,18 +388,66 @@ function Seo() {
               onChange={(e) => set("statVehicles", Number(e.target.value))}
             />
           </Field>
+          <Field label="Second counter — label">
+            <input
+              className={inputCls}
+              value={s.statVehiclesLabel}
+              maxLength={40}
+              placeholder="vehicles detailed"
+              onChange={(e) => set("statVehiclesLabel", e.target.value)}
+            />
+          </Field>
+          <Field label="Rating pill — label" hint="Always shows 5.0 and five stars.">
+            <input
+              className={inputCls}
+              value={s.statRatingLabel}
+              maxLength={40}
+              placeholder="star rating"
+              onChange={(e) => set("statRatingLabel", e.target.value)}
+            />
+          </Field>
+          <Field label="Last pill" hint="Plain text, e.g. what you offer.">
+            <input
+              className={inputCls}
+              value={s.heroPill}
+              maxLength={80}
+              onChange={(e) => set("heroPill", e.target.value)}
+            />
+          </Field>
         </div>
 
         <div className="mt-5 rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
           <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Preview
           </p>
+          {s.heroBadge.trim() && (
+            <span className="mb-2.5 inline-block rounded-full px-2.5 py-0.5 text-[10.5px] text-muted-foreground ring-1 ring-inset ring-[var(--line-2)]">
+              {s.heroBadge}
+            </span>
+          )}
           <p className="text-[22px] font-bold leading-tight tracking-tight text-foreground">
             {s.heroHeadline}
             <br />
             <span className="text-primary">{s.heroHeadlineAccent}</span>
           </p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-muted-foreground">{s.heroSubtext}</p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {[
+              s.statClientsLabel.trim() && `${s.statClients}+ ${s.statClientsLabel}`,
+              s.statRatingLabel.trim() && `5.0 ★★★★★ ${s.statRatingLabel}`,
+              s.statVehiclesLabel.trim() && `${s.statVehicles}+ ${s.statVehiclesLabel}`,
+              s.heroPill.trim(),
+            ]
+              .filter(Boolean)
+              .map((t, i) => (
+                <span
+                  key={i}
+                  className="rounded-full bg-[var(--fill-2)] px-2.5 py-1 text-[10.5px] text-muted-foreground ring-1 ring-inset ring-[var(--line-1)]"
+                >
+                  {t}
+                </span>
+              ))}
+          </div>
         </div>
       </GlassCard>
 

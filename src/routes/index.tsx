@@ -150,6 +150,24 @@ function Index() {
   const heroSubtext =
     hero?.subtext ||
     "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.";
+  // The badge and pills are also editable, and blank is meaningful there:
+  // it hides that piece. So a stored "" wins; the literals are only for when
+  // the hero failed to load at all.
+  const heroBadge = hero ? hero.badge : "Now booking — Summer detail season";
+  const heroPill = hero ? hero.pill : "No deposit required · Mobile & in-studio";
+  const statPills = [
+    {
+      value: hero?.statClients ?? 150,
+      suffix: "+",
+      label: hero ? hero.statClientsLabel : "clients served",
+    },
+    { value: 5, suffix: ".0", label: hero ? hero.statRatingLabel : "star rating", stars: true },
+    {
+      value: hero?.statVehicles ?? 200,
+      suffix: "+",
+      label: hero ? hero.statVehiclesLabel : "vehicles detailed",
+    },
+  ].filter((s) => s.label.trim());
   // Both editable in the admin; the bundled versions are only a fallback for
   // a fresh install whose tables somehow came back empty.
   const faqs = liveFaqs?.length ? liveFaqs : fallbackFaqs;
@@ -239,10 +257,12 @@ function Index() {
             transition={{ duration: 0.8, delay: 0.3 }}
             className="mx-auto max-w-5xl text-center"
           >
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass mb-8 text-xs tracking-wide text-foreground/90">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_var(--primary)]" />
-              Now booking — Summer detail season
-            </div>
+            {heroBadge && (
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass mb-8 text-xs tracking-wide text-foreground/90">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_var(--primary)]" />
+                {heroBadge}
+              </div>
+            )}
             <h1 className="font-helvetica font-bold tracking-[-0.04em] leading-[0.92] text-[clamp(3rem,9vw,8.5rem)] mb-8">
               <span className="block text-foreground">{heroHeadline}</span>
               <span className="block text-primary glow-text">{heroAccent}</span>
@@ -272,11 +292,7 @@ function Index() {
 
             {/* Stat pills */}
             <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              {[
-                { value: hero?.statClients ?? 150, suffix: "+", label: "clients served" },
-                { value: 5, suffix: ".0", label: "star rating", stars: true },
-                { value: hero?.statVehicles ?? 200, suffix: "+", label: "vehicles detailed" },
-              ].map((s, i) => (
+              {statPills.map((s, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, y: 14, filter: "blur(6px)" }}
@@ -298,15 +314,17 @@ function Index() {
                   <span className="text-xs uppercase tracking-widest text-muted-foreground">{s.label}</span>
                 </motion.div>
               ))}
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 1.06 }}
-                whileHover={{ y: -3, scale: 1.04 }}
-                className="liquid-glass rounded-full px-5 py-2.5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground"
-              >
-                No deposit required · Mobile & in-studio
-              </motion.div>
+              {heroPill.trim() && (
+                <motion.div
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 1.06 }}
+                  whileHover={{ y: -3, scale: 1.04 }}
+                  className="liquid-glass rounded-full px-5 py-2.5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground"
+                >
+                  {heroPill}
+                </motion.div>
+              )}
             </div>
 
           </motion.div>

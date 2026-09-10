@@ -798,6 +798,17 @@ export const saveSettings = createServerFn({ method: "POST" })
     return { settings: await updateSettings(data) };
   });
 
+/** Just the mobile fee — edited from the Services page, next to the prices. */
+export const saveTravelFee = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ travelFee: z.number().int().min(0).max(10000) }))
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    const settings = await updateSettings({ travelFee: data.travelFee });
+    return { travelFee: settings.travelFee };
+  });
+
 // ---------------------------- Coupons ---------------------------------
 
 export const listAdminCoupons = createServerFn({ method: "GET" }).handler(async () => {
@@ -1007,15 +1018,16 @@ export const deletePhotoById = createServerFn({ method: "POST" })
 // ============================ Automation ================================
 
 export const getAutomation = createServerFn({ method: "GET" }).handler(async () => {
-  const { listEmailRules, listEmailLog, getSettings } = await import("../db.server");
+  const { listEmailRules, listEmailLog, getSettings, listUsers } = await import("../db.server");
   const { isEmailConfigured } = await import("../email.server");
   const { requireUser } = await import("../auth.server");
   await requireUser();
 
-  const [rules, log, settings] = await Promise.all([
+  const [rules, log, settings, users] = await Promise.all([
     listEmailRules(),
     listEmailLog(60),
     getSettings(),
+    listUsers(),
   ]);
 
   return {
@@ -1027,8 +1039,34 @@ export const getAutomation = createServerFn({ method: "GET" }).handler(async () 
     logoUrl: settings.emailLogoUrl,
     replyTo: settings.emailReplyTo,
     hasKey: Boolean(settings.resendApiKey),
+    teamNotifyEnabled: settings.teamNotifyEnabled,
+    teamNotifyEmails: settings.teamNotifyEmails,
+    // Admin/staff accounts, offered as one-click recipients.
+    team: users.map((u) => ({ name: u.name, email: u.email })),
   };
 });
+
+/** Who gets the "new booking" email, and whether it's on. */
+export const saveTeamNotify = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      enabled: z.boolean(),
+      emails: z
+        .array(z.string().trim().email("One of those isn't a valid email address.").max(255))
+        .max(20),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    await updateSettings({
+      teamNotifyEnabled: data.enabled,
+      teamNotifyEmails: [...new Set(data.emails.map((e) => e.toLowerCase()))],
+    });
+    return { ok: true };
+  });
 
 export const saveEmailRule = createServerFn({ method: "POST" })
   .inputValidator(
@@ -1566,6 +1604,12 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
       heroSubtext: z.string().max(400),
       statClients: z.number().int().min(0).max(1000000),
       statVehicles: z.number().int().min(0).max(1000000),
+      // Pill wording. Blank is valid and hides that pill.
+      statClientsLabel: z.string().max(40),
+      statVehiclesLabel: z.string().max(40),
+      statRatingLabel: z.string().max(40),
+      heroBadge: z.string().max(80),
+      heroPill: z.string().max(80),
     }),
   )
   .handler(async ({ data }) => {

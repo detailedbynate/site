@@ -120,7 +120,8 @@ function fromHeader(name: string, address: string): string {
 }
 
 export async function sendEmail(input: {
-  to: string;
+  /** One address, or several on the same email (team notices). */
+  to: string | string[];
   subject: string;
   text: string;
   /** Optional branded version. Both are sent; clients pick what they can render. */
@@ -138,7 +139,7 @@ export async function sendEmail(input: {
       },
       body: JSON.stringify({
         from: fromHeader(settings.emailFromName, settings.emailFrom),
-        to: [input.to],
+        to: Array.isArray(input.to) ? input.to : [input.to],
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),
@@ -237,6 +238,59 @@ export async function runTriggerAndCustom(
     if (trigger === "reminder" || trigger === "after_service") continue;
     await runTrigger(trigger, booking, { ruleId: rule.id }).catch(() => undefined);
   }
+}
+
+/**
+ * Tell the team a detail was booked — every address under Automation → Team
+ * notifications, on one email. Independent of the customer's confirmation:
+ * it has its own log trigger, and switching the customer email off doesn't
+ * silence it. Always logs, like runTrigger.
+ */
+export async function notifyTeam(booking: Booking): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.teamNotifyEnabled) return;
+  const recipients = [
+    ...new Set((settings.teamNotifyEmails ?? []).map((e) => e.trim()).filter(Boolean)),
+  ];
+  if (!recipients.length) return;
+
+  const base = await buildVars(booking);
+  // Placeholder addresses (phone bookings, imports) aren't worth showing.
+  const vars: Record<string, string> = {
+    ...base,
+    email: base.email.endsWith(".local") ? "Not given" : base.email,
+  };
+  const subject = `New booking: ${vars.service} — ${vars.fullName || "a customer"}, ${vars.date} at ${vars.time}`;
+  const body = [
+    "A new detail was just booked.",
+    "",
+    "{{details}}",
+    "",
+    "Customer: {{fullName}}",
+    "Phone: {{phone}}",
+    "Email: {{email}}",
+    "Notes: {{notes}}",
+  ].join("\n");
+
+  const record = (status: "sent" | "failed" | "skipped", error?: string) =>
+    logEmail({
+      to: recipients.join(", "),
+      subject,
+      trigger: "team_notice",
+      status,
+      error,
+      bookingId: booking.id,
+    });
+
+  if (!isEmailConfigured(settings)) {
+    await record("skipped", "Email is not configured.");
+    return;
+  }
+
+  const { renderEmail } = await import("./email-html.server");
+  const { text, html } = await renderEmail(body, vars, booking);
+  const error = await sendEmail({ to: recipients, subject, text, html });
+  await record(error ? "failed" : "sent", error ?? undefined);
 }
 
 /**

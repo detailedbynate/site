@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Mail, Play, Plus, RotateCcw, Save, Send, Trash2, Workflow, X } from "lucide-react";
+import { AlertTriangle, Mail, Play, Plus, RotateCcw, Save, Send, Trash2, Users, Workflow, X } from "lucide-react";
 
 import {
   createCustomRule,
@@ -11,6 +11,7 @@ import {
   resetEmailRule,
   saveEmailRule,
   saveEmailSettings,
+  saveTeamNotify,
 } from "@/lib/api/admin.functions";
 import {
   Button,
@@ -101,6 +102,11 @@ function Automation() {
   const [replyTo, setReplyTo] = useState("");
   const [savingCreds, setSavingCreds] = useState(false);
 
+  // Team notifications
+  const [teamOn, setTeamOn] = useState(false);
+  const [teamEmails, setTeamEmails] = useState("");
+  const [savingTeam, setSavingTeam] = useState(false);
+
   const load = async () => {
     try {
       const res = await getAutomation();
@@ -110,9 +116,30 @@ function Automation() {
       setFromName(res.fromName);
       setLogoUrl(res.logoUrl);
       setReplyTo(res.replyTo);
+      setTeamOn(res.teamNotifyEnabled);
+      setTeamEmails(res.teamNotifyEmails.join("\n"));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load.");
+    }
+  };
+
+  const teamList = teamEmails
+    .split(/[\s,;]+/)
+    .map((e) => e.trim())
+    .filter(Boolean);
+
+  const saveTeam = async () => {
+    setSavingTeam(true);
+    setError(null);
+    try {
+      await saveTeamNotify({ data: { enabled: teamOn, emails: teamList } });
+      flash("Team notifications saved.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save.");
+    } finally {
+      setSavingTeam(false);
     }
   };
 
@@ -295,6 +322,57 @@ function Automation() {
 
         <Button variant="primary" className="mt-4" loading={savingCreds} onClick={saveCreds}>
           <Save className="h-3.5 w-3.5" /> Save connection
+        </Button>
+      </GlassCard>
+
+      <GlassCard className="mb-5 p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <Users className="h-4 w-4 text-primary" />
+              <p className="text-[15px] font-semibold tracking-tight text-foreground">
+                Team notifications
+              </p>
+            </div>
+            <p className="mt-1 text-[12.5px] text-muted-foreground">
+              Emails you and your team every time a detail is booked — on the website or added
+              here by hand.
+            </p>
+          </div>
+          <ToggleChip on={teamOn} labels={["On", "Off"]} onChange={setTeamOn} />
+        </div>
+
+        <div className="mt-5">
+          <Field label="Send to" hint="One email address per line.">
+            <textarea
+              className={`${inputCls} min-h-[90px] resize-y`}
+              value={teamEmails}
+              placeholder="nate@detailedbynate.com"
+              onChange={(e) => setTeamEmails(e.target.value)}
+            />
+          </Field>
+        </div>
+
+        {data.team.some((m) => !teamList.includes(m.email)) && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] text-muted-foreground">Add:</span>
+            {data.team
+              .filter((m) => !teamList.includes(m.email))
+              .map((m) => (
+                <button
+                  key={m.email}
+                  type="button"
+                  onClick={() => setTeamEmails([...teamList, m.email].join("\n"))}
+                  className="rounded-md bg-[var(--fill-2)] px-2 py-1 text-[11px] text-muted-foreground ring-1 ring-inset ring-[var(--line-2)] transition hover:bg-[var(--fill-3)] hover:text-foreground"
+                >
+                  + {m.name}
+                </button>
+              ))}
+          </div>
+        )}
+
+        <Button variant="primary" className="mt-4" loading={savingTeam} onClick={saveTeam}>
+          <Save className="h-3.5 w-3.5" /> Save team notifications
         </Button>
       </GlassCard>
 

@@ -258,6 +258,14 @@ export interface Settings {
   /** The three counters under the hero. Rating is fixed at 5.0. */
   statClients: number;
   statVehicles: number;
+  /** The words beside each counter. Blank hides that pill. */
+  statClientsLabel: string;
+  statVehiclesLabel: string;
+  statRatingLabel: string;
+  /** The small pill above the headline. Blank hides it. */
+  heroBadge: string;
+  /** The plain-text pill after the counters. Blank hides it. */
+  heroPill: string;
   twitterHandle: string;
 
   // --- Calendar event templates ({{vars}}, same set as emails) ---
@@ -305,6 +313,9 @@ export interface Settings {
   /** The site id / domain the provider wants, sent as data-domain. */
   analyticsSiteId: string;
   emailReplyTo: string;
+  /** Email the team whenever a detail is booked. */
+  teamNotifyEnabled: boolean;
+  teamNotifyEmails: string[];
 
   /**
    * Stripe. Secret key is used server-side only, to create payment links for
@@ -346,7 +357,10 @@ export type EmailTrigger =
   | "after_service"
   | "booking_cancelled"
   /** Sent by hand from Payments, never on a schedule. */
-  | "invoice";
+  | "invoice"
+  /** "New booking" heads-up to the team. Its own trigger so it never
+      de-dupes against the customer's confirmation. */
+  | "team_notice";
 
 export interface EmailRule {
   /** Built-in ids match EmailTrigger; custom rules get a uuid. */
@@ -600,6 +614,11 @@ export const DEFAULT_SETTINGS: Settings = {
     "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.",
   statClients: 150,
   statVehicles: 200,
+  statClientsLabel: "clients served",
+  statVehiclesLabel: "vehicles detailed",
+  statRatingLabel: "star rating",
+  heroBadge: "Now booking — Summer detail season",
+  heroPill: "No deposit required · Mobile & in-studio",
   twitterHandle: "",
   calendarEventTitle: "{{service}} — {{fullName}}",
   calendarEventDescription: `Service: {{service}}
@@ -632,6 +651,8 @@ Notes: {{notes}}`,
   analyticsScriptUrl: "",
   analyticsSiteId: "",
   emailReplyTo: "",
+  teamNotifyEnabled: false,
+  teamNotifyEmails: [] as string[],
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeAccountName: "",
