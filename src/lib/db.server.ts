@@ -272,6 +272,10 @@ export interface Settings {
   faviconUrl: string;
   /** Row id in `photos` for the homepage hero background. Blank = bundled. */
   heroPhotoId: string;
+  /** Row id in `photos` for a hero video. Set = the video plays instead of the photo. */
+  heroVideoId: string;
+  /** Package photos on the homepage: service id -> row id in `photos`. */
+  serviceImages: Record<string, string>;
   /**
    * The headline over the hero. Split in two so the second half keeps the
    * accent colour it has in the design.
@@ -644,6 +648,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ogImageUrl: "",
   faviconUrl: "",
   heroPhotoId: "",
+  heroVideoId: "",
+  serviceImages: {} as Record<string, string>,
   heroHeadline: "Make your car",
   heroHeadlineAccent: "look untouchable.",
   heroSubtext:

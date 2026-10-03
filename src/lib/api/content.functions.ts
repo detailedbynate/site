@@ -292,8 +292,16 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     if (photo) url = await readPhotoDataUrl(photo.id, photo.mime);
   }
 
+  // Package photos are served by URL (/img/<id>) so the homepage HTML stays small.
+  const serviceImages: Record<string, string> = {};
+  for (const [serviceId, photoId] of Object.entries(s.serviceImages ?? {})) {
+    if (photoId) serviceImages[serviceId] = `/img/${photoId}`;
+  }
+
   return {
     url,
+    videoUrl: s.heroVideoId ? `/media/${s.heroVideoId}` : null,
+    serviceImages,
     headline: s.heroHeadline,
     headlineAccent: s.heroHeadlineAccent,
     subtext: s.heroSubtext,
@@ -342,3 +350,70 @@ export const getLegalPage = createServerFn({ method: "GET" })
       businessName: s.businessName,
     };
   });
+
+// ========================= Package photos ===============================
+
+/** Replace the homepage photo for one package. */
+export const setServiceImage = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      serviceId: z.string().min(1).max(80),
+      mime: z.enum(["image/jpeg", "image/png", "image/webp"]),
+      base64: z.string().min(1).max(8_000_000),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { addPhoto, deletePhoto, getSettings, updateSettings } = await import("../db.server");
+    const { savePhotoFile, deletePhotoFile } = await import("../uploads.server");
+    const { requireUser } = await import("../auth.server");
+    const { randomUUID } = await import("node:crypto");
+    await requireUser();
+
+    const settings = await getSettings();
+    const map = { ...(settings.serviceImages ?? {}) };
+    const previous = map[data.serviceId];
+
+    const photoId = randomUUID();
+    const size = await savePhotoFile(photoId, data.mime, data.base64);
+    await addPhoto({ id: photoId, kind: "other", mime: data.mime, size });
+    map[data.serviceId] = photoId;
+    await updateSettings({ serviceImages: map });
+
+    if (previous) {
+      const removed = await deletePhoto(previous).catch(() => undefined);
+      if (removed) await deletePhotoFile(removed.id, removed.mime).catch(() => undefined);
+    }
+    return { url: `/img/${photoId}` };
+  });
+
+/** Go back to the bundled photo for one package. */
+export const clearServiceImage = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ serviceId: z.string().min(1).max(80) }))
+  .handler(async ({ data }) => {
+    const { getSettings, updateSettings, deletePhoto } = await import("../db.server");
+    const { deletePhotoFile } = await import("../uploads.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const map = { ...((await getSettings()).serviceImages ?? {}) };
+    const previous = map[data.serviceId];
+    delete map[data.serviceId];
+    await updateSettings({ serviceImages: map });
+    if (previous) {
+      const removed = await deletePhoto(previous).catch(() => undefined);
+      if (removed) await deletePhotoFile(removed.id, removed.mime).catch(() => undefined);
+    }
+    return { ok: true };
+  });
+
+/** Current package photos, for the admin. */
+export const getServiceImages = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings } = await import("../db.server");
+  const { requireUser } = await import("../auth.server");
+  await requireUser();
+  const out: Record<string, string> = {};
+  for (const [id, photoId] of Object.entries((await getSettings()).serviceImages ?? {})) {
+    if (photoId) out[id] = `/img/${photoId}`;
+  }
+  return { images: out };
+});

@@ -1,3 +1,4 @@
+import logo from "@/assets/logo.png";
 import { Link, useLoaderData } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight, Menu, Phone, Star, X } from "lucide-react";
@@ -86,8 +87,7 @@ export function SiteNav({ phone }: { phone?: string | null }) {
       <div className="mx-auto max-w-[1240px] rounded-[18px] border border-white/10 bg-[#0a0a0c]/55 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6">
           <Link to="/" className="site-wordmark flex items-center gap-2 whitespace-nowrap text-[17px] sm:text-[18px]">
-            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[var(--estoril)]" />
-            Detailed by Nate
+            <img src={logo} alt="Nate Auto Detailing" className="h-7 w-auto sm:h-8" />
           </Link>
 
           <nav aria-label="Main" className="hidden items-center gap-8 lg:flex">
@@ -178,8 +178,7 @@ export function SiteFooter({
       <Container className="grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr]">
         <div>
           <p className="site-wordmark flex items-center gap-2 text-[20px]">
-            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-[var(--estoril)]" />
-            Detailed by Nate
+            <img src={logo} alt="Nate Auto Detailing" className="h-7 w-auto sm:h-8" />
           </p>
           <p className="mt-4 max-w-[36ch] leading-relaxed text-[var(--text-muted)]">
             Mobile and in-studio car detailing{area ? ` in the ${area}` : ""}. Booked online, done

@@ -17,10 +17,12 @@ const EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
 };
 
 export function isAllowedImage(mime: string): boolean {
-  return mime in EXT;
+  return mime in EXT && mime.startsWith("image/");
 }
 
 function filenameFor(id: string, mime: string): string {
@@ -58,6 +60,20 @@ export async function readPhotoDataUrl(id: string, mime: string): Promise<string
 
 export async function deletePhotoFile(id: string, mime: string): Promise<void> {
   await unlink(filenameFor(id, mime)).catch(() => undefined);
+}
+
+/** Writes an uploaded video as-is. Size is checked by the caller. */
+export async function saveVideoFile(id: string, mime: string, bytes: Uint8Array): Promise<number> {
+  if (mime !== "video/mp4" && mime !== "video/webm") throw new Error("Only MP4 and WebM videos are allowed.");
+  if (bytes.byteLength === 0) throw new Error("That file appears to be empty.");
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(filenameFor(id, mime), bytes);
+  return bytes.byteLength;
+}
+
+/** Absolute path of a stored file, for streaming. */
+export function uploadPath(id: string, mime: string): string {
+  return filenameFor(id, mime);
 }
 
 /** Raw bytes for serving over HTTP. Null when the file is missing. */

@@ -225,7 +225,13 @@ export async function brandingImageResponse(url: URL): Promise<Response | null> 
   if (!settings) return null;
 
   const allowed = new Set(
-    [settings.faviconUrl, settings.ogImageUrl, settings.emailLogoUrl, settings.heroPhotoId]
+    [
+      settings.faviconUrl,
+      settings.ogImageUrl,
+      settings.emailLogoUrl,
+      settings.heroPhotoId,
+      ...Object.values(settings.serviceImages ?? {}),
+    ]
       .map((v) => (v ?? "").trim())
       // The settings hold either a bare photo id (hero) or a /img/<id> URL.
       .map((v) => v.replace(/^\/img\//, ""))

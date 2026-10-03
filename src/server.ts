@@ -116,6 +116,12 @@ export default {
       const img = await brandingImageResponse(requestUrl).catch(() => null);
       if (img) return img;
 
+      // Hero video: uploaded raw (too big for a server function) and
+      // streamed back with Range support, which Safari needs to play it.
+      const { heroVideoResponse } = await import("./lib/media.server");
+      const video = await heroVideoResponse(request, requestUrl);
+      if (video) return video;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

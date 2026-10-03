@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Truck } from "lucide-react";
+import { ImageIcon, Truck, Upload } from "lucide-react";
 
 import {
   getAdminSettings,
@@ -9,6 +9,12 @@ import {
   saveTravelFee,
 } from "@/lib/api/admin.functions";
 import { CatalogEditor } from "@/components/admin/CatalogEditor";
+import { getCatalog } from "@/lib/api/booking.functions";
+import {
+  clearServiceImage,
+  getServiceImages,
+  setServiceImage,
+} from "@/lib/api/content.functions";
 import { Button, GlassCard, PageHeader, inputCls } from "@/components/admin/ui";
 
 export const Route = createFileRoute("/admin/services")({
@@ -23,6 +29,7 @@ function Services() {
         subtitle="Your packages. Edits here change the booking form immediately — price and duration are re-read on every booking."
       />
       <MobileFeeCard />
+      <PackagePhotosCard />
       <CatalogEditor
         kind="service"
         labels={{
@@ -132,5 +139,146 @@ function MobileFeeCard() {
         </p>
       )}
     </GlassCard>
+  );
+}
+
+/** Packages that have a photo on the homepage, in display order. */
+const PHOTO_PACKAGES = ["diamond", "gold", "silver"];
+
+/**
+ * The photo on each package card on the homepage. Blank = the bundled
+ * placeholder. Images are shrunk in the browser before upload.
+ */
+function PackagePhotosCard() {
+  const [images, setImages] = useState<Record<string, string> | null>(null);
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = async () => {
+    const [imgs, cat] = await Promise.all([getServiceImages(), getCatalog().catch(() => null)]);
+    setImages(imgs.images);
+    if (cat) setTitles(Object.fromEntries(cat.services.map((s) => [s.id, s.title])));
+  };
+
+  useEffect(() => {
+    load().catch(() => setImages({}));
+  }, []);
+
+  if (!images) return null;
+
+  const upload = async (serviceId: string, file: File) => {
+    setBusy(serviceId);
+    setMsg(null);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Couldn't process that image.");
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close?.();
+      const base64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1] ?? "";
+      await setServiceImage({ data: { serviceId, mime: "image/jpeg", base64 } });
+      await load();
+      setMsg({ ok: true, text: "Photo updated. It shows on the homepage now." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Upload failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const reset = async (serviceId: string) => {
+    if (!confirm("Go back to the default photo for this package?")) return;
+    setBusy(serviceId);
+    try {
+      await clearServiceImage({ data: { serviceId } });
+      await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <GlassCard index={2} className="mb-5 p-6">
+      <div className="flex items-center gap-2.5">
+        <ImageIcon className="h-4 w-4 text-primary" />
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">Package photos</p>
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted-foreground">
+        The picture on each package on your homepage.
+      </p>
+      {msg && (
+        <p className={`mt-3 text-[12.5px] ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>
+          {msg.text}
+        </p>
+      )}
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        {PHOTO_PACKAGES.map((id) => (
+          <PackagePhoto
+            key={id}
+            title={titles[id] ?? id[0]!.toUpperCase() + id.slice(1)}
+            url={images[id] ?? null}
+            busy={busy === id}
+            onPick={(f) => void upload(id, f)}
+            onReset={() => void reset(id)}
+          />
+        ))}
+      </div>
+    </GlassCard>
+  );
+}
+
+function PackagePhoto({
+  title,
+  url,
+  busy,
+  onPick,
+  onReset,
+}: {
+  title: string;
+  url: string | null;
+  busy: boolean;
+  onPick: (f: File) => void;
+  onReset: () => void;
+}) {
+  const [input, setInput] = useState<HTMLInputElement | null>(null);
+  return (
+    <div>
+      <p className="text-[13px] font-semibold text-foreground">{title}</p>
+      <div className="mt-2 overflow-hidden rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)]">
+        {url ? (
+          <img src={url} alt={`${title} photo`} className="h-32 w-full object-cover" />
+        ) : (
+          <div className="flex h-32 items-center justify-center text-[12px] text-muted-foreground">
+            Using the default photo
+          </div>
+        )}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button size="sm" variant="primary" loading={busy} onClick={() => input?.click()}>
+          <Upload className="h-3.5 w-3.5" /> {url ? "Replace" : "Upload"}
+        </Button>
+        {url && (
+          <Button size="sm" onClick={onReset}>
+            Use default
+          </Button>
+        )}
+      </div>
+      <input
+        ref={setInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onPick(f);
+          e.target.value = "";
+        }}
+      />
+    </div>
   );
 }

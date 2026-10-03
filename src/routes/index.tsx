@@ -265,6 +265,8 @@ function Index() {
       if (liveServices && !live) return null;
       return {
         ...card,
+        // An uploaded photo (Admin -> Services) replaces the bundled one.
+        image: hero?.serviceImages?.[card.id] ?? card.image,
         title: live?.title ?? card.title,
         subtitle: live?.subtitle ?? card.subtitle,
         priceValue: live?.priceValue ?? card.priceValue,
@@ -293,15 +295,31 @@ function Index() {
           id="top"
           className="relative isolate flex min-h-[100svh] flex-col justify-end overflow-hidden pb-8 pt-44 md:pb-12"
         >
-          <motion.img
-            src={heroUrl ?? heroCar}
-            alt=""
-            aria-hidden
-            initial={{ scale: 1.06 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 1.8, ease: "easeOut" }}
-            className="absolute inset-0 -z-20 h-full w-full object-cover"
-          />
+          {hero?.videoUrl ? (
+            // A hero video (SEO & branding) plays silently on loop; the
+            // photo is its poster while it loads.
+            <video
+              src={hero.videoUrl}
+              poster={heroUrl ?? heroCar}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              aria-hidden
+              className="absolute inset-0 -z-20 h-full w-full object-cover"
+            />
+          ) : (
+            <motion.img
+              src={heroUrl ?? heroCar}
+              alt=""
+              aria-hidden
+              initial={{ scale: 1.06 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 1.8, ease: "easeOut" }}
+              className="absolute inset-0 -z-20 h-full w-full object-cover"
+            />
+          )}
           <div
             aria-hidden
             className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(10,10,12,0.92)_0%,rgba(10,10,12,0.72)_45%,rgba(10,10,12,0.25)_100%)]"

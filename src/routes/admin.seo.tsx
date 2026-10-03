@@ -705,16 +705,42 @@ function HeroImageCard({
   onError: (m: string) => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [videoBusy, setVideoBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
-      setUrl((await getHeroImage()).url);
+      const h = await getHeroImage();
+      setUrl(h.url);
+      setVideoUrl(h.videoUrl);
     } catch {
       setUrl(null);
+      setVideoUrl(null);
     }
   }, []);
+
+  // Videos go to their own endpoint as a raw file — too big for base64.
+  const sendVideo = async (file: File | null) => {
+    setVideoBusy(true);
+    try {
+      const res = await fetch("/admin/media/hero-video", {
+        method: file ? "POST" : "DELETE",
+        headers: file ? { "content-type": file.type } : undefined,
+        body: file ?? undefined,
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "Upload failed.");
+      onOk(file ? "Hero video uploaded. It now plays instead of the photo." : "Back to the photo.");
+      await load();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Upload failed.");
+    } finally {
+      setVideoBusy(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -753,12 +779,21 @@ function HeroImageCard({
         </p>
       </div>
       <p className="mt-1 text-[12.5px] text-muted-foreground">
-        The photo behind the headline on your front page. A wide, dark shot works best — text
-        sits on top of it.
+        The photo or video behind the headline on your front page. A wide, dark shot works best —
+        text sits on top of it. If you add a video, it plays instead of the photo.
       </p>
 
       <div className="mt-5 overflow-hidden rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)]">
-        {url ? (
+        {videoUrl ? (
+          <video
+            src={videoUrl}
+            muted
+            loop
+            autoPlay
+            playsInline
+            className="h-44 w-full object-cover"
+          />
+        ) : url ? (
           <img src={url} alt="Current homepage background" className="h-44 w-full object-cover" />
         ) : (
           <div className="flex h-44 items-center justify-center text-[12.5px] text-muted-foreground">
@@ -788,7 +823,33 @@ function HeroImageCard({
             Use the default
           </Button>
         )}
+        <Button loading={videoBusy} onClick={() => videoInput.current?.click()}>
+          <Upload className="h-3.5 w-3.5" /> {videoUrl ? "Replace video" : "Use a video"}
+        </Button>
+        {videoUrl && (
+          <Button
+            onClick={() => {
+              if (confirm("Remove the video and show the photo?")) void sendVideo(null);
+            }}
+          >
+            Remove video
+          </Button>
+        )}
       </div>
+      <p className="mt-2 text-[12px] text-muted-foreground">
+        Video: MP4 or WebM, under 60 MB. It plays muted on a loop, so a short clip works best.
+      </p>
+      <input
+        ref={videoInput}
+        type="file"
+        accept="video/mp4,video/webm"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void sendVideo(f);
+          e.target.value = "";
+        }}
+      />
 
       <input
         ref={input}
