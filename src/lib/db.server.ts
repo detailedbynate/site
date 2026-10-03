@@ -153,6 +153,11 @@ export interface ServiceRecord {
    * real recorded expenses, so this can never inflate reported profit.
    */
   materialCost: number;
+  /**
+   * The price from `nextPriceDate` (Settings) on. Null = no change. On that
+   * date it replaces priceValue for good — see applyScheduledPrices.
+   */
+  nextPrice?: number | null;
 }
 
 export interface AddOnRecord {
@@ -350,6 +355,8 @@ export interface Settings {
    * bookable). Set under Admin -> Services.
    */
   ceramicMode: "hidden" | "soon" | "open";
+  /** YYYY-MM-DD the packages' next prices take over. Blank = none scheduled. */
+  nextPriceDate: string;
   /** Wording of the ceramic section on the homepage (Admin -> Services). */
   ceramicIntro: string;
   ceramicPoints: string[];
@@ -706,6 +713,7 @@ Notes: {{notes}}`,
   teamNotifyEnabled: false,
   teamNotifyEmails: [] as string[],
   ceramicMode: "soon" as "hidden" | "soon" | "open",
+  nextPriceDate: "",
   ceramicIntro: "A hard, glossy layer that bonds to your paint and protects it for years. Water and dirt slide off, washes take half the time, and the shine lasts long after wax would be gone.",
   ceramicPoints: ["Protection that lasts years, not weeks","Water beads and rolls straight off","Stands up to road salt and winter grime"] as string[],
   ceramicNote: "A coating needs time to set before the car goes back out, so plan to leave it with me for the day. Keep it dry for 24 hours and skip washes for the first week.",
@@ -1302,6 +1310,8 @@ const ADDED_COLUMNS: [table: string, column: string, ddl: string][] = [
   // for the per-package margin estimate, never for the headline P&L, which
   // always comes from real recorded expenses.
   ["services", "materialCost", "REAL NOT NULL DEFAULT 0"],
+  // Scheduled next-season price; swapped in on Settings.nextPriceDate.
+  ["services", "nextPrice", "REAL"],
 ];
 
 let db: DatabaseSync | null = null;
@@ -1639,6 +1649,7 @@ function toService(r: Row): ServiceRecord {
     active: !!r.active,
     sortOrder: r.sortOrder,
     materialCost: r.materialCost ?? 0,
+    nextPrice: r.nextPrice ?? null,
   };
 }
 
@@ -2369,7 +2380,28 @@ export async function listBookingsWithClients(): Promise<
 
 // ---------------------------- Catalog ---------------------------------
 
+/**
+ * Scheduled price change. From Settings.nextPriceDate (business timezone)
+ * every package's next price becomes its price, and the schedule clears.
+ * Runs lazily before services are read, so nothing has to be awake at
+ * midnight, and every price shown or charged goes through it.
+ */
+async function applyScheduledPrices(): Promise<void> {
+  const s = await getSettings();
+  if (!s.nextPriceDate) return;
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: s.timezone || "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  if (today < s.nextPriceDate) return;
+  sql("UPDATE services SET priceValue = nextPrice, nextPrice = NULL WHERE nextPrice IS NOT NULL").run();
+  await updateSettings({ nextPriceDate: "" });
+}
+
 export async function listServices(): Promise<ServiceRecord[]> {
+  await applyScheduledPrices();
   return (sql("SELECT * FROM services ORDER BY sortOrder ASC").all() as Row[]).map(toService);
 }
 
@@ -2394,6 +2426,11 @@ export async function upsertService(input: ServiceRecord): Promise<ServiceRecord
     input.sortOrder,
     input.materialCost ?? 0,
   );
+  // Only touch the scheduled price when the caller is setting it, so seeds
+  // and other writers never wipe it.
+  if (input.nextPrice !== undefined) {
+    sql("UPDATE services SET nextPrice = ? WHERE id = ?").run(input.nextPrice, input.id);
+  }
   return input;
 }
 

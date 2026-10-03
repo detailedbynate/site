@@ -62,3 +62,17 @@ export function isSeasonDate(
 export function seasonDiscount(promo: Promo, price: number): number {
   return Math.round((price * promo.percent) / 100);
 }
+
+/**
+ * A package's price for an appointment on `date`. Appointments in the
+ * promoted season are charged next season's price (Admin -> Services) even
+ * when booked before the switch-over date. The season discount then comes
+ * off this.
+ */
+export function packagePrice(
+  service: { priceValue: number; nextPrice?: number | null },
+  promo: Promo | null | undefined,
+  date: string | null | undefined,
+): number {
+  return isSeasonDate(promo, date) && service.nextPrice != null ? service.nextPrice : service.priceValue;
+}

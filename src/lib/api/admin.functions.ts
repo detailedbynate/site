@@ -697,6 +697,8 @@ export const saveService = createServerFn({ method: "POST" })
       sortOrder: z.number().int().min(0).max(999).default(0),
       // Estimated product cost per job — feeds the margin estimate on Finance.
       materialCost: z.number().min(0).max(100000).default(0),
+      // Price from the scheduled change date on; null = no change.
+      nextPrice: z.number().int().min(0).max(100000).nullable().optional(),
     }),
   )
   .handler(async ({ data }) => {
@@ -1925,4 +1927,15 @@ export const saveCeramicCopy = createServerFn({ method: "POST" })
       ceramicNote: data.ceramicNote.trim(),
     });
     return { ceramicIntro: s.ceramicIntro, ceramicPoints: s.ceramicPoints, ceramicNote: s.ceramicNote };
+  });
+
+/** The date every package's next price takes over. Blank cancels it. */
+export const saveNextPriceDate = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ nextPriceDate: z.union([dateSchema, z.literal("")]) }))
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    const s = await updateSettings({ nextPriceDate: data.nextPriceDate });
+    return { nextPriceDate: s.nextPriceDate };
   });

@@ -35,6 +35,8 @@ export type CatalogItem = {
   description?: string;
   /** Services only — product cost per job, for the margin view on Finance. */
   materialCost?: number;
+  /** Services only — price from the scheduled change date; null = no change. */
+  nextPrice?: number | null;
 };
 
 type Props = {
@@ -99,6 +101,7 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                 features: "features" in s ? (s.features ?? []) : [],
                 description: "description" in s ? (s.description ?? "") : "",
                 materialCost: "materialCost" in s ? (s.materialCost ?? 0) : 0,
+                nextPrice: "nextPrice" in s ? (s.nextPrice ?? null) : null,
               }
             : {
                 id: s.id,
@@ -226,6 +229,11 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                     {kind === "addon" ? "+" : ""}
                     {money(item.price)}
                   </span>
+                  {item.nextPrice != null && item.nextPrice !== item.price && (
+                    <span className="tnum text-[12px] text-muted-foreground">
+                      → {money(item.nextPrice)} next season
+                    </span>
+                  )}
                   <span className="tnum text-[12px] text-muted-foreground">
                     {hours(item.durationMinutes)}
                   </span>
@@ -320,6 +328,25 @@ export function CatalogEditor({ kind, labels, onSave, onDelete }: Props) {
                 </div>
                 {kind === "service" && (
                   <>
+                    <Field
+                      label="Next season price ($)"
+                      hint="Takes over on the date set under Next season prices. Leave blank to keep the current price."
+                    >
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={draft.nextPrice ?? ""}
+                        placeholder="No change"
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            nextPrice: e.target.value === "" ? null : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </Field>
                     <Field
                       label="Product cost per job ($)"
                       hint="Roughly what the chemicals and pads cost you. Drives the margin estimate on Finance — leave at 0 to skip it."

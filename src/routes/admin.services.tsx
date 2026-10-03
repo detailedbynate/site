@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ImageIcon, Sparkles, Truck, Upload } from "lucide-react";
+import { CalendarClock, ImageIcon, Sparkles, Truck, Upload } from "lucide-react";
 
 import {
   getAdminSettings,
@@ -8,6 +8,7 @@ import {
   saveService,
   saveCeramicCopy,
   saveCeramicMode,
+  saveNextPriceDate,
   saveTravelFee,
 } from "@/lib/api/admin.functions";
 import { CatalogEditor } from "@/components/admin/CatalogEditor";
@@ -31,6 +32,7 @@ function Services() {
         subtitle="Your packages. Edits here change the booking form immediately — price and duration are re-read on every booking."
       />
       <MobileFeeCard />
+      <NextPricesCard />
       <CeramicModeCard />
       <PackagePhotosCard />
       <CatalogEditor
@@ -56,6 +58,7 @@ function Services() {
               active: item.active,
               sortOrder: item.sortOrder,
               materialCost: item.materialCost ?? 0,
+              nextPrice: item.nextPrice ?? null,
             },
           })
         }
@@ -448,5 +451,75 @@ function CeramicCopyEditor() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * When next season's prices start. Each package's next price is set in its
+ * own editor below; on this date they all take over at once.
+ */
+function NextPricesCard() {
+  const [date, setDate] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    getAdminSettings()
+      .then((r) => setDate(r.settings.nextPriceDate ?? ""))
+      .catch(() => undefined);
+  }, []);
+
+  if (date === null) return null;
+
+  const save = async (value: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await saveNextPriceDate({ data: { nextPriceDate: value } });
+      setDate(r.nextPriceDate);
+      setMsg({
+        ok: true,
+        text: r.nextPriceDate ? "Saved. Prices switch over on that date." : "Price change cancelled.",
+      });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't save." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard index={1} className="mb-5 p-6">
+      <div className="flex items-center gap-2.5">
+        <CalendarClock className="h-4 w-4 text-primary" />
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">Next season prices</p>
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted-foreground">
+        Set each package's next season price in its editor below. Current prices stay until this
+        date; from then on the new ones are shown and charged.
+      </p>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="block text-[12px] font-medium text-muted-foreground">
+          New prices start on
+          <input
+            className={`${inputCls} mt-1.5 w-[180px]`}
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <Button variant="primary" loading={busy} onClick={() => void save(date)}>
+          Save date
+        </Button>
+        {date && (
+          <Button onClick={() => void save("")} disabled={busy}>
+            Cancel change
+          </Button>
+        )}
+      </div>
+      {msg && (
+        <p className={`mt-3 text-[12.5px] ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>
+      )}
+    </GlassCard>
   );
 }

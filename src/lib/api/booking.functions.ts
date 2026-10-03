@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { isCoatingService, quote } from "../services";
-import { isSeasonDate, promoFromSettings, seasonDiscount } from "../promo";
+import { isSeasonDate, packagePrice, promoFromSettings, seasonDiscount } from "../promo";
 
 // NOTE: everything imported only *inside* a handler below (the .server.ts
 // modules) is tree-shaken out of the client bundle. Keep it that way —
@@ -53,11 +53,13 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     },
     services: services
       .filter((s) => s.active && (ceramicMode === "open" || !isCoatingService(s.id)))
-      .map(({ id, title, subtitle, priceValue, durationMinutes, features, description }) => ({
+      .map(({ id, title, subtitle, priceValue, nextPrice, durationMinutes, features, description }) => ({
         id,
         title,
         subtitle,
         priceValue,
+        // Charged for appointments in next season (see packagePrice).
+        nextPrice: nextPrice ?? null,
         durationMinutes,
         features: features ?? [],
         description: description ?? "",
@@ -87,7 +89,13 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
  * Resolve a selection against the live catalog and price it. Shared by
  * every handler below so the catalog is read exactly one way.
  */
-async function priceSelection(serviceId: string, addOnIds: string[], location: "mobile" | "shop" | null) {
+async function priceSelection(
+  serviceId: string,
+  addOnIds: string[],
+  location: "mobile" | "shop" | null,
+  /** Appointment date: next-season dates are charged next season's price. */
+  date?: string,
+) {
   const { listServices, listAddOns, getSettings } = await import("../db.server");
   const [services, addOns, settings] = await Promise.all([
     listServices(),
@@ -99,7 +107,8 @@ async function priceSelection(serviceId: string, addOnIds: string[], location: "
   if (!service) throw new Error("That package is no longer available.");
 
   const chosen = addOns.filter((a) => addOnIds.includes(a.id) && a.active);
-  const q = quote({ service, addOns: chosen, location, travelFee: settings.travelFee });
+  const priced = { ...service, priceValue: packagePrice(service, promoFromSettings(settings), date) };
+  const q = quote({ service: priced, addOns: chosen, location, travelFee: settings.travelFee });
 
   return { service, addOns: chosen, ...q };
 }
@@ -230,7 +239,7 @@ export const checkCoupon = createServerFn({ method: "POST" })
 
     // Price the order server-side; a client-supplied subtotal could be forged
     // to inflate a percentage discount.
-    const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location);
+    const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location, data.date);
     // A code applies on top of the season discount, the same as at booking.
     const { getSettings } = await import("../db.server");
     const promo = promoFromSettings(await getSettings());
@@ -299,6 +308,7 @@ export const createBooking = createServerFn({ method: "POST" })
       data.serviceId,
       data.addOnIds,
       data.location,
+      data.date,
     );
 
     // Re-check the slot is still open right before booking it — closes

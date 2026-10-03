@@ -26,7 +26,7 @@ import {
 } from "./CustomerInfoStep";
 import { ConfirmationModal, type ConfirmationDetails } from "./ConfirmationModal";
 import { checkCoupon, createBooking, getCatalog } from "@/lib/api/booking.functions";
-import { isSeasonDate, seasonDiscount, type Promo } from "@/lib/promo";
+import { isSeasonDate, packagePrice, seasonDiscount, type Promo } from "@/lib/promo";
 import { isCoatingService } from "@/lib/services";
 import {
   quote,
@@ -199,17 +199,24 @@ export function BookingWizard({
   const travelFee = catalog?.travelFee ?? 0;
 
   const chosenService = services.find((s) => s.id === service) ?? null;
+  // Next-season appointments are charged next season's price. Before a date
+  // is picked, browsing next season's dates previews that price too.
+  const promoForPrice = catalog?.promo ?? null;
+  const priceDate = date ?? (season && promoForPrice ? promoForPrice.seasonStart : null);
+  const priceOf = (s: { priceValue: number; nextPrice?: number | null }) =>
+    packagePrice(s, promoForPrice, priceDate);
+  const servicePrice = chosenService ? priceOf(chosenService) : 0;
   const chosenAddOns = addOnList.filter((a) => picked.includes(a.id));
 
   const { price: total, durationMinutes: minutes } = useMemo(
     () =>
       quote({
-        service: chosenService ?? undefined,
+        service: chosenService ? { ...chosenService, priceValue: servicePrice } : undefined,
         addOns: chosenAddOns,
         location,
         travelFee,
       }),
-    [chosenService, chosenAddOns, location, travelFee],
+    [chosenService, servicePrice, chosenAddOns, location, travelFee],
   );
 
   // What the customer actually pays. Still only a preview — createBooking
@@ -440,7 +447,7 @@ export function BookingWizard({
         // Reference and total come back from the server, which recomputes
         // both — never the client's copy.
         reference: res.booking.reference,
-        service: `${res.booking.serviceTitle} · $${chosenService?.priceValue ?? 0}`,
+        service: `${res.booking.serviceTitle} · ${servicePrice}`,
         addOns: res.booking.addOnTitles.length ? res.booking.addOnTitles.join(", ") : "None",
         location: locationLabel,
         dateLabel,
@@ -612,7 +619,7 @@ export function BookingWizard({
                           </div>
                           <div className="shrink-0 text-right">
                             <p className="text-lg font-bold leading-tight text-foreground">
-                              ${s.priceValue}
+                              ${priceOf(s)}
                             </p>
                             <p className="flex items-center justify-end gap-1 text-[12px] text-muted-foreground">
                               <Clock className="h-3 w-3" />
@@ -844,7 +851,7 @@ export function BookingWizard({
                     <Row
                       label="Service"
                       value={
-                        chosenService ? `${chosenService.title} · $${chosenService.priceValue}` : "—"
+                        chosenService ? `${chosenService.title} · ${servicePrice}` : "—"
                       }
                     />
                     <Row
