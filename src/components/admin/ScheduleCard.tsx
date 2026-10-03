@@ -27,7 +27,7 @@ function hourLabel(h: number): string {
   return h > 12 ? `${h - 12} PM` : `${h} AM`;
 }
 
-function WeekEditor({
+export function WeekEditor({
   week,
   onChange,
   disabled,

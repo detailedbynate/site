@@ -107,8 +107,17 @@ function hoursForDate(
   date: string,
   location?: "mobile" | "shop",
 ): { openMin: number; closeMin: number } | null {
-  const week =
-    location === "mobile" && cfg.mobileScheduleEnabled ? cfg.mobileSchedule : cfg.weeklySchedule;
+  // Date ranges come first (Settings → Availability). Outside every range is
+  // closed when "only inside these ranges" is on, and a range can carry its
+  // own weekly hours, which then apply to shop and mobile alike.
+  const range = (cfg.availabilityRanges ?? []).find((r) => date >= r.start && date <= r.end);
+  if (!range && cfg.onlyInRanges) return null;
+
+  const week = range?.schedule
+    ? range.schedule
+    : location === "mobile" && cfg.mobileScheduleEnabled
+      ? cfg.mobileSchedule
+      : cfg.weeklySchedule;
   const day = week?.[dayOfWeek(date)];
   if (!day || !day.open) return null;
   if (day.closeHour <= day.openHour) return null;

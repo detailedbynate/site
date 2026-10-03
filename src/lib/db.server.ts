@@ -175,6 +175,18 @@ export interface DaySchedule {
 /** Seven entries, index 0 = Sunday. */
 export type WeekSchedule = DaySchedule[];
 
+/** A stretch of dates with its own availability (Settings → Availability). */
+export interface AvailabilityRange {
+  id: string;
+  /** Optional name shown in the admin, e.g. "Summer". */
+  label: string;
+  /** YYYY-MM-DD, inclusive. */
+  start: string;
+  end: string;
+  /** Its own weekly hours; null = the regular weekly schedule. */
+  schedule: WeekSchedule | null;
+}
+
 export interface Settings {
   businessName: string;
   contactEmail: string;
@@ -237,6 +249,13 @@ export interface Settings {
    */
   mobileScheduleEnabled: boolean;
   mobileSchedule: WeekSchedule;
+  /**
+   * Date ranges with their own availability. With onlyInRanges on, dates
+   * outside every range are closed; off, ranges only change the hours of the
+   * dates they cover. Read by hoursForDate in availability.server.ts.
+   */
+  availabilityRanges: AvailabilityRange[];
+  onlyInRanges: boolean;
   /**
    * Public URL of the live site. Used for the Google OAuth redirect URI and
    * SEO canonical/OG tags. Left blank, both fall back to the address of the
@@ -670,6 +689,8 @@ Notes: {{notes}}`,
   emailReplyTo: "",
   teamNotifyEnabled: false,
   teamNotifyEmails: [] as string[],
+  availabilityRanges: [] as AvailabilityRange[],
+  onlyInRanges: false,
   promoEnabled: true,
   promoPercent: 10,
   promoSeasonStart: "2027-04-01",

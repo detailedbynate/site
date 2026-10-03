@@ -138,6 +138,10 @@ export function BookingWizard({
   const [time, setTime] = useState<string | null>(null);
   /** Browsing next season's dates (the promoted season) rather than this one's. */
   const [season, setSeason] = useState(Boolean(initialSeason));
+  /** First step shows detailing or coating, three at a time, not everything. */
+  const [serviceTab, setServiceTab] = useState<"detail" | "coating">(
+    isCoatingService(initialServiceId) ? "coating" : "detail",
+  );
   const [customer, setCustomer] = useState<CustomerInfo>(emptyCustomer);
   const [errors, setErrors] = useState<CustomerErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -179,6 +183,14 @@ export function BookingWizard({
   }, []);
 
   const services = catalog?.services ?? [];
+  const detailServices = services.filter((s) => !isCoatingService(s.id));
+  const coatingServices = services.filter((s) => isCoatingService(s.id));
+  const hasServiceTabs = detailServices.length > 0 && coatingServices.length > 0;
+  const shownServices = hasServiceTabs
+    ? serviceTab === "coating"
+      ? coatingServices
+      : detailServices
+    : services;
   // Fields can be scoped to particular packages, so this depends on the pick.
   const activeFields = (catalog?.formFields ?? []).filter(
     (f) => f.onlyForServices.length === 0 || (service && f.onlyForServices.includes(service)),
@@ -515,53 +527,135 @@ export function BookingWizard({
             )}
 
             {step === 0 && catalog && (
-              <div className="grid gap-3 sm:gap-4">
-                {services.map((s, i) => {
-                  const selected = service === s.id;
-                  return (
-                    <motion.button
-                      key={s.id}
-                      type="button"
-                      custom={i}
-                      variants={listItem}
-                      initial="hidden"
-                      animate="show"
-                      whileHover={{ x: 6 }}
-                      whileTap={{ scale: 0.99 }}
-                      onClick={() => pickService(s.id)}
-                      className={`glass relative rounded-3xl p-5 text-left ${
-                        selected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/40"
-                      }`}
-                    >
-                      <SelectRing selected={selected} />
-                      <div className="flex flex-wrap items-baseline gap-3 pr-10">
-                        <p className="font-semibold text-foreground">{s.title}</p>
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
-                          {Math.round((s.durationMinutes / 60) * 10) / 10} hr
-                        </span>
-                        <span className="ml-auto text-lg font-bold text-primary">
-                          ${s.priceValue}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                        {s.description || s.subtitle}
-                      </p>
-                      {s.features.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {s.features.map((f) => (
+              <div className="grid gap-4">
+                {hasServiceTabs && (
+                  <div
+                    className="glass grid grid-cols-2 gap-1 rounded-2xl p-1"
+                    role="tablist"
+                    aria-label="Type of service"
+                  >
+                    {(["detail", "coating"] as const).map((key) => {
+                      const active = serviceTab === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setServiceTab(key)}
+                          className={`relative isolate flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-300 ${
+                            active ? "text-white" : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {active && (
+                            <motion.span
+                              layoutId="service-tab"
+                              transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                              aria-hidden
+                              className="absolute inset-0 -z-10 rounded-xl"
+                              style={{
+                                backgroundImage: "var(--gradient-brand)",
+                                boxShadow: "var(--shadow-glow)",
+                              }}
+                            />
+                          )}
+                          {key === "detail" ? "Detailing" : "Ceramic coating"}
+                          {key === "coating" && promo?.enabled && (
                             <span
-                              key={f}
-                              className="rounded-full bg-secondary px-3 py-1 text-[11px] font-medium text-secondary-foreground"
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors duration-300 ${
+                                active ? "bg-white/20 text-white" : "bg-primary/15 text-primary"
+                              }`}
                             >
-                              {f}
+                              New
                             </span>
-                          ))}
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* One line per option; the details open only for the one picked. */}
+                <div className="grid gap-2.5">
+                  {shownServices.map((s, i) => {
+                    const selected = service === s.id;
+                    const hasDetails = Boolean(s.description) || s.features.length > 0;
+                    return (
+                      <motion.button
+                        key={s.id}
+                        type="button"
+                        custom={i}
+                        variants={listItem}
+                        initial="hidden"
+                        animate="show"
+                        whileTap={{ scale: 0.99 }}
+                        aria-pressed={selected}
+                        onClick={() => pickService(s.id)}
+                        className={`glass relative rounded-2xl px-5 py-4 text-left transition-shadow duration-200 ${
+                          selected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/40"
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <span
+                            aria-hidden
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200 ${
+                              selected ? "border-primary bg-primary" : "border-border"
+                            }`}
+                          >
+                            {selected && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-foreground">{s.title}</p>
+                            <p className="truncate text-[13px] text-muted-foreground">
+                              {s.subtitle}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-lg font-bold leading-tight text-foreground">
+                              ${s.priceValue}
+                            </p>
+                            <p className="flex items-center justify-end gap-1 text-[12px] text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {Math.round((s.durationMinutes / 60) * 10) / 10} hr
+                            </p>
+                          </div>
                         </div>
-                      )}
-                    </motion.button>
-                  );
-                })}
+
+                        <AnimatePresence initial={false}>
+                          {selected && hasDetails && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                              className="overflow-hidden"
+                            >
+                              <div className="pl-9 pt-3">
+                                {s.description && (
+                                  <p className="text-[13px] leading-relaxed text-muted-foreground">
+                                    {s.description}
+                                  </p>
+                                )}
+                                {s.features.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {s.features.map((f) => (
+                                      <span
+                                        key={f}
+                                        className="rounded-full bg-secondary px-3 py-1 text-[11px] font-medium text-secondary-foreground"
+                                      >
+                                        {f}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

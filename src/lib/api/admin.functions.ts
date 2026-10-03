@@ -1836,3 +1836,61 @@ export const removeCustomRule = createServerFn({ method: "POST" })
     await deleteEmailRule(data.id);
     return { ok: true };
   });
+
+// ======================== Availability by date ==========================
+
+const rangeSchema = z.object({
+  id: z.string().min(1).max(40),
+  label: z.string().max(60).default(""),
+  start: dateSchema,
+  end: dateSchema,
+  schedule: weekSchema.nullable(),
+});
+
+/**
+ * Date ranges like "June 1 – July 20", each optionally with its own hours,
+ * and whether bookings are taken only inside them. Ranges are stored sorted
+ * and may not overlap, so it's never ambiguous which one a date follows.
+ */
+export const saveAvailability = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      onlyInRanges: z.boolean(),
+      availabilityRanges: z.array(rangeSchema).max(50),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+
+    const name = (r: { label: string; start: string }) => (r.label.trim() ? `"${r.label.trim()}"` : `The range starting ${r.start}`);
+    const ranges = [...data.availabilityRanges]
+      .map((r) => ({ ...r, label: r.label.trim() }))
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+    for (const r of ranges) {
+      if (r.end < r.start) throw new Error(`${name(r)} ends before it starts.`);
+      if (r.schedule) {
+        for (const d of r.schedule) {
+          if (d.open && d.closeHour <= d.openHour) {
+            throw new Error(`${name(r)}: closing time must be after opening time.`);
+          }
+        }
+      }
+    }
+    for (let i = 1; i < ranges.length; i++) {
+      if (ranges[i].start <= ranges[i - 1].end) {
+        throw new Error(`${name(ranges[i - 1])} and ${name(ranges[i]).replace(/^The/, "the")} overlap. Adjust the dates so they don't.`);
+      }
+    }
+    if (data.onlyInRanges && ranges.length === 0) {
+      throw new Error(
+        "Add at least one date range, or turn off \"Only take bookings inside these ranges\" — otherwise nothing could be booked.",
+      );
+    }
+
+    return {
+      settings: await updateSettings({ onlyInRanges: data.onlyInRanges, availabilityRanges: ranges }),
+    };
+  });
