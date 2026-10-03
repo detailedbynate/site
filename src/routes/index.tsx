@@ -137,7 +137,7 @@ const steps = [
   { title: "Pick a time", text: "Open slots are live, so booking takes about a minute." },
   {
     title: "Drop off or stay home",
-    text: "Bring it to the studio, or I come to you with my own water and power.",
+    text: "Bring it to the studio, or I come to your home or work.",
   },
   {
     title: "Drive away showroom-ready",
@@ -156,7 +156,7 @@ const fallbackReviews = [
 
 const fallbackFaqs = [
   { q: "How long does a full detail take?", a: "A standard full detail runs 3–5 hours depending on vehicle size and condition. Ceramic coatings require an additional cure day." },
-  { q: "Do you come to me?", a: "Yes — mobile service is available throughout the area. I bring water, power, and every product needed." },
+  { q: "Do you come to me?", a: "Yes — mobile service is available throughout the area. I bring every product and tool needed." },
   { q: "What's included in the ceramic coating package?", a: "Full decontamination wash, clay bar, single-stage paint correction, panel wipe, and a professional 9H ceramic coating with warranty." },
   { q: "How should I prepare my vehicle?", a: "Just remove personal belongings. I handle everything else — from cup-holder gunk to dog hair embedded in the seats." },
   { q: "Do you offer maintenance packages?", a: "Absolutely. Monthly and bi-weekly maintenance plans keep your finish protected and save you money long-term." },

@@ -784,7 +784,7 @@ export const DEFAULT_FAQS: Omit<Faq, "createdAt">[] = [
     id: "seed-mobile",
     question: "Do you come to me?",
     answer:
-      "Yes — mobile service is available throughout the area. I bring water, power, and every product needed.",
+      "Yes — mobile service is available throughout the area. I bring every product and tool needed.",
     active: true,
     sortOrder: 1,
   },

@@ -699,7 +699,7 @@ export function BookingWizard({
                         title: "Mobile — I come to you",
                         text: shopOnly
                           ? "Ceramic coating is done at the shop only."
-                          : `Fully self-contained setup with water and power. +${travelFee} travel.`,
+                          : `I come to your home or work. +${travelFee} travel.`,
                       },
                       {
                         id: "shop" as const,
