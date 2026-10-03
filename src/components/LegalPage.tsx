@@ -1,5 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { Container, SiteFooter, SiteNav } from "@/components/site/SiteChrome";
 
 /**
  * Shared shell for the Privacy and Terms pages.
@@ -12,21 +11,15 @@ import { ArrowLeft } from "lucide-react";
  */
 export function LegalPage({ title, body }: { title: string; body: string }) {
   return (
-    <div className="min-h-screen bg-background px-4 py-10 sm:py-16">
-      <div className="mx-auto w-full max-w-2xl">
-        <Link
-          to="/"
-          className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to site
-        </Link>
-
-        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          {title}
-        </h1>
-
-        <div className="mt-8">{format(body)}</div>
-      </div>
+    <div className="site min-h-screen">
+      <SiteNav />
+      <Container className="pb-24 pt-40 md:pt-48">
+        <article className="max-w-[68ch]">
+          <h1 className="text-[clamp(2rem,4.6vw,3.4rem)] font-extrabold leading-none">{title}</h1>
+          <div className="mt-10">{format(body)}</div>
+        </article>
+      </Container>
+      <SiteFooter />
     </div>
   );
 }
@@ -45,10 +38,7 @@ function format(body: string) {
   return blocks.map((block, i) => {
     if (block.startsWith("## ")) {
       return (
-        <h2
-          key={i}
-          className="mt-10 text-lg font-semibold tracking-tight text-foreground first:mt-0"
-        >
+        <h2 key={i} className="mt-12 text-[21px] font-bold leading-tight first:mt-0">
           {block.slice(3).trim()}
         </h2>
       );
@@ -73,13 +63,10 @@ function format(body: string) {
       }
 
       return (
-        <ul key={i} className="mt-4 space-y-2">
+        <ul key={i} className="mt-4 space-y-2.5">
           {items.map((item, j) => (
-            <li
-              key={j}
-              className="flex gap-2.5 text-[14.5px] leading-relaxed text-muted-foreground"
-            >
-              <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary" />
+            <li key={j} className="flex gap-3 text-[16px] leading-[1.7] text-[var(--text-muted)]">
+              <span aria-hidden className="mt-[0.7em] h-1.5 w-1.5 shrink-0 rounded-[1px] bg-[var(--sky)]" />
               <span>{inline(item)}</span>
             </li>
           ))}
@@ -88,7 +75,7 @@ function format(body: string) {
     }
 
     return (
-      <p key={i} className="mt-4 text-[14.5px] leading-relaxed text-muted-foreground">
+      <p key={i} className="mt-4 text-[16px] leading-[1.7] text-[var(--text-muted)]">
         {inline(block.replace(/\n/g, " "))}
       </p>
     );
@@ -99,7 +86,7 @@ function format(body: string) {
 function inline(text: string) {
   return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
     part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i} className="font-semibold text-foreground">
+      <strong key={i} className="font-semibold text-[var(--text)]">
         {part.slice(2, -2)}
       </strong>
     ) : (

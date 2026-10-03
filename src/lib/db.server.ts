@@ -4,7 +4,12 @@ import process from "node:process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
-import { DEFAULT_ADD_ONS, DEFAULT_SERVICES, type LocationChoice } from "./services";
+import {
+  CERAMIC_SERVICES,
+  DEFAULT_ADD_ONS,
+  DEFAULT_SERVICES,
+  type LocationChoice,
+} from "./services";
 
 // --------------------------------------------------------------------------
 // SQLite-backed store, using node:sqlite — the database engine built into
@@ -316,6 +321,18 @@ export interface Settings {
   /** Email the team whenever a detail is booked. */
   teamNotifyEnabled: boolean;
   teamNotifyEmails: string[];
+
+  // --- Next-season reservations (see lib/promo.ts) ---
+  /** Dates inside the season can be booked now, at a discount. */
+  promoEnabled: boolean;
+  promoPercent: number;
+  /** YYYY-MM-DD, inclusive. */
+  promoSeasonStart: string;
+  promoSeasonEnd: string;
+  promoSeasonLabel: string;
+  /** {percent} and {season} are filled in when shown. */
+  promoBarText: string;
+  promoPopupText: string;
 
   /**
    * Stripe. Secret key is used server-side only, to create payment links for
@@ -653,6 +670,14 @@ Notes: {{notes}}`,
   emailReplyTo: "",
   teamNotifyEnabled: false,
   teamNotifyEmails: [] as string[],
+  promoEnabled: true,
+  promoPercent: 10,
+  promoSeasonStart: "2027-04-01",
+  promoSeasonEnd: "2027-10-31",
+  promoSeasonLabel: "2027 season",
+  promoBarText: "Now reserving {season} spots — book ahead and save {percent}%.",
+  promoPopupText:
+    "Lock in any date in the {season} now and we'll take {percent}% off your detail.",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeAccountName: "",
@@ -1293,7 +1318,45 @@ function getDB(): DatabaseSync {
   // the two, and the site would briefly advertise default prices.
   importLegacyJSON();
   seedIfEmpty();
+  seedCeramicOnce();
   return db;
+}
+
+/**
+ * Add the ceramic coating tiers to a database that predates them.
+ *
+ * Runs once, guarded by a settings flag rather than "missing from the table" —
+ * so a tier the owner deletes stays deleted instead of reappearing on the
+ * next restart. INSERT OR IGNORE leaves any same-id service untouched.
+ */
+function seedCeramicOnce(): void {
+  const d = db!;
+  if (d.prepare("SELECT 1 FROM settings WHERE key = 'seededCeramic2027'").get()) return;
+  d.exec("BEGIN");
+  try {
+    for (const [i, s] of CERAMIC_SERVICES.entries()) {
+      d.prepare(
+        `INSERT OR IGNORE INTO services (id,title,subtitle,priceValue,durationMinutes,features,description,active,sortOrder)
+         VALUES (?,?,?,?,?,?,?,1,?)`,
+      ).run(
+        s.id,
+        s.title,
+        s.subtitle,
+        s.priceValue,
+        s.durationMinutes,
+        JSON.stringify(s.features),
+        s.description,
+        10 + i,
+      );
+    }
+    d.prepare(
+      "INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    ).run("seededCeramic2027", "true");
+    d.exec("COMMIT");
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 function tableIsEmpty(table: string): boolean {

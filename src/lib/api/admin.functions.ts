@@ -1624,6 +1624,31 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
     return { settings: await updateSettings({ ...data, siteUrl: url }) };
   });
 
+/** Next-season reservations: on/off, discount, season dates and wording. */
+export const savePromo = createServerFn({ method: "POST" })
+  .inputValidator(
+    z
+      .object({
+        promoEnabled: z.boolean(),
+        promoPercent: z.number().int().min(0).max(90),
+        promoSeasonStart: dateSchema,
+        promoSeasonEnd: dateSchema,
+        promoSeasonLabel: z.string().min(1).max(40),
+        promoBarText: z.string().max(160),
+        promoPopupText: z.string().max(400),
+      })
+      .refine((d) => d.promoSeasonEnd >= d.promoSeasonStart, {
+        message: "The season has to end after it starts.",
+        path: ["promoSeasonEnd"],
+      }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    return { settings: await updateSettings(data) };
+  });
+
 export const saveCalendarTemplates = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({

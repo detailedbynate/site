@@ -25,7 +25,7 @@ import type { ServiceId } from "@/lib/services";
 
 type BookingModalContext = {
   /** Pass a package id to open with it preselected (e.g. "Book Diamond"). */
-  open: (serviceId?: ServiceId) => void;
+  open: (serviceId?: ServiceId, opts?: { season?: boolean }) => void;
   close: () => void;
   isOpen: boolean;
 };
@@ -43,12 +43,15 @@ export function useBookingModal(): BookingModalContext {
 export function BookingModalProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [initialServiceId, setInitialServiceId] = useState<ServiceId | undefined>();
+  // Opened from the next-season banner or popup: start on next season's dates.
+  const [initialSeason, setInitialSeason] = useState(false);
   // Bumped on every open so the wizard remounts with a clean slate — a second
   // booking shouldn't inherit the first one's answers.
   const [session, setSession] = useState(0);
 
-  const open = useCallback((serviceId?: ServiceId) => {
+  const open = useCallback((serviceId?: ServiceId, opts?: { season?: boolean }) => {
     setInitialServiceId(serviceId);
+    setInitialSeason(Boolean(opts?.season));
     setSession((n) => n + 1);
     setIsOpen(true);
   }, []);
@@ -64,6 +67,7 @@ export function BookingModalProvider({ children }: { children: ReactNode }) {
         onClose={close}
         session={session}
         initialServiceId={initialServiceId}
+        initialSeason={initialSeason}
       />
     </Ctx.Provider>
   );
@@ -74,11 +78,13 @@ function BookingModal({
   onClose,
   session,
   initialServiceId,
+  initialSeason,
 }: {
   open: boolean;
   onClose: () => void;
   session: number;
   initialServiceId?: ServiceId;
+  initialSeason?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -128,7 +134,7 @@ function BookingModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-50 overflow-y-auto overscroll-contain"
+          className="site site-wizard fixed inset-0 z-50 overflow-y-auto overscroll-contain"
           style={{
             backgroundColor: "color-mix(in oklab, var(--brand-deep) 78%, transparent)",
             backdropFilter: "blur(10px)",
@@ -161,6 +167,7 @@ function BookingModal({
               <BookingWizard
                 key={session}
                 initialServiceId={initialServiceId}
+                initialSeason={initialSeason}
                 onDone={onClose}
               />
             </motion.div>

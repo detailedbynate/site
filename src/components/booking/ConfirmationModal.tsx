@@ -58,7 +58,7 @@ export function ConfirmationModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          className="site site-wizard fixed inset-0 z-[60] flex items-center justify-center p-4"
           style={{
             backgroundColor: "color-mix(in oklab, var(--brand-deep) 72%, transparent)",
             backdropFilter: "blur(14px)",
@@ -169,10 +169,12 @@ export function ConfirmationModal({
               </Block>
             </motion.div>
 
-            {details.discountCode && details.discountAmount ? (
+            {details.discountAmount ? (
               <div className="mt-5 flex items-baseline justify-between px-5 sm:px-7">
                 <span className="text-sm font-semibold text-primary">
-                  Code {details.discountCode} applied
+                  {details.discountCode
+                    ? `Discount applied (code ${details.discountCode})`
+                    : "Season discount applied"}
                 </span>
                 <span className="text-sm font-bold text-primary">−${details.discountAmount}</span>
               </div>

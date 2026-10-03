@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { quote } from "../services";
+import { isCoatingService, quote } from "../services";
+import { isSeasonDate, promoFromSettings, seasonDiscount } from "../promo";
 
 // NOTE: everything imported only *inside* a handler below (the .server.ts
 // modules) is tree-shaken out of the client bundle. Keep it that way —
@@ -49,6 +50,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
       })),
     travelFee: settings.travelFee,
     formFields: formFields.filter((f) => f.active),
+    promo: promoFromSettings(settings),
     business: {
       name: settings.businessName,
       email: settings.contactEmail,
@@ -86,12 +88,30 @@ export const getBookableDays = createServerFn({ method: "GET" })
       addOnIds: addOnIdsSchema,
       // Mobile jobs can run a different schedule, so availability depends on it.
       location: z.enum(["mobile", "shop"]).optional(),
+      /** YYYY-MM of next season, instead of the rolling window. */
+      month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
     }),
   )
   .handler(async ({ data }) => {
     const { getAvailableDays } = await import("../availability.server");
     const { durationMinutes } = await priceSelection(data.serviceId, data.addOnIds, null);
-    return { days: await getAvailableDays(durationMinutes, undefined, data.location) };
+    if (!data.month) {
+      return { days: await getAvailableDays(durationMinutes, undefined, data.location) };
+    }
+
+    // One month of the promoted season, clipped to the season's own dates.
+    const { getSettings } = await import("../db.server");
+    const promo = promoFromSettings(await getSettings());
+    if (!promo.enabled) return { days: [] };
+    const [y, m] = data.month.split("-").map(Number);
+    const first = `${data.month}-01`;
+    const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    const from = first > promo.seasonStart ? first : promo.seasonStart;
+    const to = last < promo.seasonEnd ? last : promo.seasonEnd;
+    if (from > to) return { days: [] };
+    return {
+      days: await getAvailableDays(durationMinutes, undefined, data.location, { from, to }),
+    };
   });
 
 export const getAvailability = createServerFn({ method: "GET" })
@@ -171,6 +191,8 @@ export const checkCoupon = createServerFn({ method: "POST" })
           one-per-customer code be refused in the preview rather than
           silently dropped at submit. */
       email: z.string().max(255).optional(),
+      /** The chosen day — next-season dates are priced with the season discount. */
+      date: dateSchema.optional(),
     }),
   )
   .handler(async ({ data }) => {
@@ -186,7 +208,11 @@ export const checkCoupon = createServerFn({ method: "POST" })
     // Price the order server-side; a client-supplied subtotal could be forged
     // to inflate a percentage discount.
     const { price } = await priceSelection(data.serviceId, data.addOnIds, data.location);
-    const result = await evaluateCoupon(data.code, price, data.email);
+    // A code applies on top of the season discount, the same as at booking.
+    const { getSettings } = await import("../db.server");
+    const promo = promoFromSettings(await getSettings());
+    const base = isSeasonDate(promo, data.date) ? price - seasonDiscount(promo, price) : price;
+    const result = await evaluateCoupon(data.code, base, data.email);
 
     if (!result.ok) return { ok: false as const, reason: result.reason };
     return {
@@ -276,10 +302,29 @@ export const createBooking = createServerFn({ method: "POST" })
     // previewed. A code that expired or ran out between preview and submit is
     // simply not applied — the booking still goes through at full price
     // rather than failing outright, which would be a worse experience.
+    // Next-season reservation: decided here from the date, never from the
+    // client. A coupon then applies to what's left.
+    const { getSettings: promoSettings } = await import("../db.server");
+    const promo = promoFromSettings(await promoSettings());
+    const seasonOff = isSeasonDate(promo, data.date) ? seasonDiscount(promo, totalPrice) : 0;
+
+    // Ceramic coating is new for the promoted season — while reservations
+    // run, it can't be booked for a date outside it.
+    if (promo.enabled && isCoatingService(service.id) && !isSeasonDate(promo, data.date)) {
+      throw new Error(
+        `Ceramic coating is booked for the ${promo.seasonLabel}. Please pick a date in the season.`,
+      );
+    }
+
+    // Coatings need a clean, covered space to apply and cure — shop only.
+    if (isCoatingService(service.id) && data.location === "mobile") {
+      throw new Error("Ceramic coating is done at the shop only. Please choose At the shop.");
+    }
+
     let discount = 0;
     let appliedCoupon: string | undefined;
     if (data.couponCode?.trim()) {
-      const result = await evaluateCoupon(data.couponCode, totalPrice, data.email);
+      const result = await evaluateCoupon(data.couponCode, totalPrice - seasonOff, data.email);
       if (result.ok) {
         const { redeemCoupon } = await import("../db.server");
         // redeemCoupon re-checks BOTH caps inside its transaction, so two
@@ -344,8 +389,16 @@ export const createBooking = createServerFn({ method: "POST" })
       address: data.location === "mobile" ? data.address : undefined,
       vehicle: data.vehicle,
       totalPrice,
-      discount: discount > 0 ? discount : undefined,
-      notes: data.notes,
+      discount: discount + seasonOff > 0 ? discount + seasonOff : undefined,
+      // Left on the booking so the owner can see why the price is lower.
+      notes: seasonOff
+        ? [
+            data.notes,
+            `${promo.seasonLabel} reservation: ${promo.percent}% off (${seasonOff}) applied automatically.`,
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : data.notes,
       googleEventId: googleEventId ?? undefined,
     });
 
@@ -414,7 +467,8 @@ export const createBooking = createServerFn({ method: "POST" })
       booking,
       client,
       appliedCoupon,
-      discount,
+      discount: discount + seasonOff,
+      seasonDiscount: seasonOff,
       // Shown on the confirmation screen and mailed out. Absent when
       // deposits are off, or when Stripe couldn't produce a link.
       depositAmount,
@@ -444,6 +498,8 @@ export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () =>
     // browser on purpose: it is a public script tag either way.
     analyticsScriptUrl: s.analyticsScriptUrl,
     analyticsSiteId: s.analyticsSiteId,
+    // The announcement bar on every public page reads this.
+    promo: promoFromSettings(s),
   };
 });
 

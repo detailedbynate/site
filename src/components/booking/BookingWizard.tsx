@@ -26,6 +26,8 @@ import {
 } from "./CustomerInfoStep";
 import { ConfirmationModal, type ConfirmationDetails } from "./ConfirmationModal";
 import { checkCoupon, createBooking, getCatalog } from "@/lib/api/booking.functions";
+import { isSeasonDate, seasonDiscount, type Promo } from "@/lib/promo";
+import { isCoatingService } from "@/lib/services";
 import {
   quote,
   type AddOnDef,
@@ -53,6 +55,7 @@ type Catalog = {
   addOns: AddOnDef[];
   travelFee: number;
   formFields: FormFieldDef[];
+  promo?: Promo;
 };
 
 const STEPS = ["Service", "Add-ons", "Location", "Date & time", "Your info", "Review"];
@@ -117,10 +120,13 @@ function scrollParentOf(node: HTMLElement): HTMLElement | null {
 export function BookingWizard({
   onDone,
   initialServiceId,
+  initialSeason,
 }: {
   onDone?: () => void;
   /** Preselect a package and skip straight past the picker (Back still works). */
   initialServiceId?: ServiceId;
+  /** Start the date step on next season's dates (the discounted ones). */
+  initialSeason?: boolean;
 }) {
   const [step, setStep] = useState(initialServiceId ? 1 : 0);
   const [dir, setDir] = useState(1);
@@ -130,6 +136,8 @@ export function BookingWizard({
   const [address, setAddress] = useState("");
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
+  /** Browsing next season's dates (the promoted season) rather than this one's. */
+  const [season, setSeason] = useState(Boolean(initialSeason));
   const [customer, setCustomer] = useState<CustomerInfo>(emptyCustomer);
   const [errors, setErrors] = useState<CustomerErrors>({});
   const [notice, setNotice] = useState<string | null>(null);
@@ -194,7 +202,31 @@ export function BookingWizard({
 
   // What the customer actually pays. Still only a preview — createBooking
   // recomputes the price and re-checks the code before anything is saved.
-  const payable = applied ? Math.max(0, total - applied.discount) : total;
+  // Next-season dates get the season discount; a code then applies on top.
+  const promo = catalog?.promo ?? null;
+  const seasonOff = promo && isSeasonDate(promo, date) ? seasonDiscount(promo, total) : 0;
+  const payable = Math.max(0, total - seasonOff - (applied?.discount ?? 0));
+
+  // While next-season reservations run, ceramic coating is only booked for
+  // the season — so the date step opens on it and can't switch back.
+  const lockSeason = Boolean(promo?.enabled && service && isCoatingService(service));
+  useEffect(() => {
+    if (lockSeason && !season) {
+      setSeason(true);
+      setDate(null);
+      setTime(null);
+    }
+  }, [lockSeason, season]);
+
+  // Coatings are applied at the shop only, so the location is set for them.
+  const shopOnly = isCoatingService(service);
+  useEffect(() => {
+    if (shopOnly && location !== "shop") {
+      setLocation("shop");
+      setDate(null);
+      setTime(null);
+    }
+  }, [shopOnly, location]);
 
   const applyCode = async () => {
     if (!service || !codeInput.trim()) return;
@@ -208,6 +240,7 @@ export function BookingWizard({
           addOnIds: picked,
           location,
           email: customer.email.trim() || undefined,
+          date: date ?? undefined,
         },
       });
       if (res.ok) {
@@ -234,7 +267,7 @@ export function BookingWizard({
   useEffect(() => {
     setApplied(null);
     setCodeError(null);
-  }, [service, picked, location]);
+  }, [service, picked, location, date]);
 
   const dateLabel = date ? longDate.format(new Date(`${date}T12:00:00`)) : "—";
   const timeLabel = time ? formatTime12h(time) : "—";
@@ -570,7 +603,9 @@ export function BookingWizard({
                         id: "mobile" as const,
                         icon: Truck,
                         title: "Mobile — I come to you",
-                        text: `Fully self-contained setup with water and power. +$${travelFee} travel.`,
+                        text: shopOnly
+                          ? "Ceramic coating is done at the shop only."
+                          : `Fully self-contained setup with water and power. +${travelFee} travel.`,
                       },
                       {
                         id: "shop" as const,
@@ -592,12 +627,13 @@ export function BookingWizard({
                         animate="show"
                         whileHover={{ y: -6 }}
                         whileTap={{ scale: 0.98 }}
+                        disabled={shopOnly && opt.id === "mobile"}
                         onClick={() => {
                           setLocation(opt.id);
                           setDate(null);
                           setTime(null);
                         }}
-                        className={`glass relative rounded-3xl p-6 text-left ${
+                        className={`glass relative rounded-3xl p-6 text-left disabled:cursor-not-allowed disabled:opacity-45 ${
                           selected ? "ring-2 ring-primary" : "hover:ring-1 hover:ring-primary/40"
                         }`}
                       >
@@ -655,6 +691,14 @@ export function BookingWizard({
                   setTime(null);
                 }}
                 onTime={setTime}
+                promo={promo}
+                season={season}
+                lockSeason={lockSeason}
+                onSeason={(next) => {
+                  setSeason(next);
+                  setDate(null);
+                  setTime(null);
+                }}
               />
             )}
 
@@ -719,6 +763,12 @@ export function BookingWizard({
                     />
                     <Row label="Location" value={locationLabel} />
                     <Row label="Date & time" value={`${dateLabel} · ${timeLabel}`} />
+                    {seasonOff > 0 && promo && (
+                      <Row
+                        label="Season discount"
+                        value={`−${seasonOff} (${promo.percent}% off, ${promo.seasonLabel})`}
+                      />
+                    )}
                     <Row
                       label="Estimated time"
                       value={`${Math.round((minutes / 60) * 10) / 10} hours`}
@@ -832,7 +882,7 @@ export function BookingWizard({
                   <div className="mt-5 flex items-baseline justify-between border-t border-border pt-4">
                     <span className="text-sm font-semibold text-muted-foreground">Total</span>
                     <div className="text-right">
-                      {applied && (
+                      {(applied || seasonOff > 0) && (
                         <span className="mr-2 text-base font-semibold text-muted-foreground line-through">
                           ${total}
                         </span>
@@ -885,12 +935,12 @@ export function BookingWizard({
             Running total
           </span>
           <motion.span
-            key={total}
+            key={total - seasonOff}
             initial={{ y: -6, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             className="text-lg font-bold text-foreground"
           >
-            ${total}
+            ${total - seasonOff}
           </motion.span>
         </div>
 

@@ -584,3 +584,279 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Public site theme — home, book, results and legal pages. Scoped to `.site`
+   so the admin, which shares a few of the utilities above, is untouched.
+
+   The owner's picks: Satoshi throughout, near-black with one electric blue,
+   and frosted glass panels. Glass only reads with something behind it, so
+   dark sections carry faint, static blue light (`.site-glow`) and the hero
+   panels sit over the photo. The booking wizard is restyled to match in
+   the .site-wizard block at the bottom.
+   ========================================================================== */
+@layer base {
+  .site {
+    --ink: #0a0a0c;
+    --harbour: #18181c;
+    --line: rgb(255 255 255 / 0.09);
+    --estoril: #2f6bff;
+    --sky: #7aa2ff;
+    --ice: #dbe5ff;
+    --frost: #f2f2f3;
+    --amber: #fbbf24;
+    --text: #f2f2f3;
+    --text-muted: #9a9ba3;
+    --glass: rgb(255 255 255 / 0.045);
+    --glass-line: rgb(255 255 255 / 0.1);
+
+    --radius: 0.75rem;
+    --background: var(--ink);
+    --foreground: var(--text);
+    --card: var(--harbour);
+    --card-foreground: var(--text);
+    --popover: var(--harbour);
+    --popover-foreground: var(--text);
+    --primary: var(--sky);
+    --primary-foreground: var(--ink);
+    --primary-glow: var(--ice);
+    --secondary: var(--harbour);
+    --secondary-foreground: var(--text);
+    --muted: var(--harbour);
+    --muted-foreground: var(--text-muted);
+    --accent: var(--sky);
+    --accent-foreground: var(--ink);
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--sky);
+
+    background-color: var(--ink);
+    color: var(--text);
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .site :where(h1, h2, h3, h4) {
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+  }
+
+  .site :focus-visible {
+    outline: 2px solid var(--sky);
+    outline-offset: 2px;
+  }
+
+  .site .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .site-display {
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .site-wordmark {
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .site-label {
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 15px;
+  }
+
+  .site-navlink {
+    font-size: 15px;
+    font-weight: 500;
+    color: rgb(255 255 255 / 0.72);
+    transition: color 0.15s ease;
+  }
+  .site-navlink:hover {
+    color: #fff;
+  }
+
+  /* Frosted panel. Pair with something to blur: a photo or .site-glow. */
+  .site-glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-line);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+
+  /*
+    Same look as .site-glass without the blur, for panels that move. A
+    backdrop-filter re-blurs everything behind the panel on every frame it
+    moves, which is what made the card lift and the scroll-in stutter. Over
+    the near-flat dark sections the blur was invisible anyway.
+  */
+  .site-card {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.025));
+    border: 1px solid var(--glass-line);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+
+  /* Faint, still blue light behind a section, for the glass to catch. */
+  .site-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .site-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40rem 26rem at 12% 8%, rgb(47 107 255 / 0.16), transparent 70%),
+      radial-gradient(34rem 24rem at 92% 88%, rgb(47 107 255 / 0.1), transparent 70%);
+  }
+
+  .site-btn,
+  .site-btn-quiet,
+  .site-btn-dark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    height: 3.25rem;
+    padding: 0 1.5rem;
+    border-radius: 12px;
+    font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+    font-size: 15.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .site-btn {
+    background: var(--estoril);
+    color: #fff;
+    box-shadow: 0 10px 28px -10px rgb(47 107 255 / 0.6);
+  }
+  .site-btn:hover {
+    background: #4a7dff;
+  }
+  .site-btn-quiet {
+    border: 1px solid rgb(255 255 255 / 0.14);
+    background: rgb(255 255 255 / 0.06);
+    color: #fff;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .site-btn-quiet:hover {
+    background: rgb(255 255 255 / 0.11);
+  }
+  .site-btn-dark {
+    background: var(--ink);
+    color: #fff;
+  }
+  .site-btn-dark:hover {
+    background: var(--harbour);
+  }
+  .site-btn-sm {
+    height: 2.75rem;
+    padding: 0 1.1rem;
+    border-radius: 10px;
+    font-size: 14.5px;
+  }
+}
+
+/* The page behind a public page, including iOS overscroll. */
+body:has(.site) {
+  background-color: #0a0a0c;
+  background-image: none;
+}
+
+
+/* ==========================================================================
+   Booking wizard, restyled to match the site. The wizard is a large
+   component built on the old glass utilities and brand tokens; rather than
+   rewrite its markup, those are re-pointed here. Scoped to .site-wizard —
+   on the booking overlays (which portal to <body>) and around the inline
+   wizard on /book. Unlayered so it wins over the utilities.
+   ========================================================================== */
+.site-wizard {
+  --primary: #5b8cff;
+  --primary-foreground: #0a0a0c;
+  --primary-glow: #7aa2ff;
+  --accent: #5b8cff;
+  --ring: #5b8cff;
+  --secondary: #1c1c21;
+  --muted: #1c1c21;
+  --card: #141418;
+  --popover: #141418;
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.12);
+  --brand: #2f6bff;
+  --brand-soft: #7aa2ff;
+  --brand-deep: #0a0a0c;
+  --gradient-brand: linear-gradient(#2f6bff, #2f6bff);
+  --gradient-glow: linear-gradient(#2f6bff, #2f6bff);
+  --shadow-glow: 0 10px 28px -10px rgb(47 107 255 / 0.6);
+  --shadow-glass: 0 30px 80px -30px rgb(0 0 0 / 0.8);
+  font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The main panel: one frosted sheet. It doesn't move, so the blur is cheap. */
+.site-wizard .glass-strong {
+  background: rgb(18 18 22 / 0.86);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 26px;
+  box-shadow:
+    0 40px 120px -40px rgb(47 107 255 / 0.45),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+/* Option cards inside it: glassy fill, no blur — they animate between steps. */
+.site-wizard .glass,
+.site-wizard .liquid-glass {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.025));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid rgb(255 255 255 / 0.09);
+  box-shadow: none;
+}
+
+/* Brand-filled buttons and selected slots read white-on-blue, like the site. */
+.site-wizard [style*="gradient-brand"] {
+  color: #fff;
+}
+
+/* Drop the old storefront effects: light sweeps, glows, shimmer, all-caps. */
+.site-wizard .sheen::after,
+.site-wizard .btn-liquid::after {
+  content: none;
+}
+.site-wizard .btn-liquid:hover,
+.site-wizard .btn-liquid:active {
+  transform: none;
+}
+.site-wizard .glow-text {
+  text-shadow: none;
+}
+.site-wizard .animate-shimmer,
+.site-wizard .animate-pulse-glow {
+  animation: none;
+}
+.site-wizard .uppercase {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.site-wizard .font-display,
+.site-wizard .font-helvetica,
+.site-wizard :where(h1, h2, h3, h4) {
+  font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}

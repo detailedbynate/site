@@ -7,6 +7,8 @@ import { getSettings, listBookingsForDate } from "./db.server";
 // getSettings() is the single source; env vars only seed the defaults on
 // first run (see DEFAULT_SETTINGS in db.server.ts).
 
+import { isSeasonDate, promoFromSettings } from "./promo";
+
 export interface TimeRange {
   startMinutes: number; // minutes from midnight, local business time
   endMinutes: number;
@@ -140,7 +142,13 @@ export async function getAvailableSlots(
   const latest = addDays(today, Math.max(cfg.bookingWindowDays - 1, 0));
   // Cheap reject: the whole day is before the notice cutoff, or past the
   // window. The per-slot check below is what actually enforces the notice.
-  if (date < dateOfInstant(cutoff, cfg.timezone) || date > latest) return [];
+  // Dates in the promoted next season are bookable beyond the window.
+  if (
+    date < dateOfInstant(cutoff, cfg.timezone) ||
+    (date > latest && !isSeasonDate(promoFromSettings(cfg), date))
+  ) {
+    return [];
+  }
 
   const hours = hoursForDate(cfg, date, location);
   if (!hours) return [];
@@ -321,6 +329,8 @@ export async function getAvailableDays(
   durationMinutes: number,
   ignoreBookingId?: string,
   location?: "mobile" | "shop",
+  /** An explicit span instead of the rolling window — next season's months. */
+  range?: { from: string; to: string },
 ): Promise<DayAvailability[]> {
   const cfg = await getSettings();
   const today = todayInZone(cfg.timezone);
@@ -332,8 +342,14 @@ export async function getAvailableDays(
   const candidates: string[] = [];
   const days: DayAvailability[] = [];
 
-  for (let i = 0; i < cfg.bookingWindowDays; i++) {
-    const date = addDays(today, i);
+  const dates: string[] = [];
+  if (range) {
+    for (let d = range.from; d <= range.to; d = addDays(d, 1)) dates.push(d);
+  } else {
+    for (let i = 0; i < cfg.bookingWindowDays; i++) dates.push(addDays(today, i));
+  }
+
+  for (const date of dates) {
 
     if (date < earliestDate) {
       days.push({ date, available: false, slotCount: 0, reason: "lead-time" });

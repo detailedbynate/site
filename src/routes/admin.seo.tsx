@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Globe, Image as ImageIcon, Images, Plus, Search, Trash2, Type, Upload } from "lucide-react";
+import { Globe, Image as ImageIcon, Images, Megaphone, Plus, Search, Trash2, Type, Upload } from "lucide-react";
 
 import {
   getAdminSettings,
   listAdminGallery,
   removeGalleryPair,
   saveGalleryPair,
+  savePromo,
   saveSiteSettings,
   uploadPhoto,
 } from "@/lib/api/admin.functions";
@@ -21,6 +22,7 @@ import {
   PageHeader,
   Spinner,
   SuccessNote,
+  Toggle,
   inputCls,
 } from "@/components/admin/ui";
 
@@ -335,7 +337,7 @@ function Seo() {
               onChange={(e) => set("heroHeadline", e.target.value)}
             />
           </Field>
-          <Field label="Headline, second line" hint="Shown in your accent colour.">
+          <Field label="Headline, second line">
             <input
               className={inputCls}
               value={s.heroHeadlineAccent}
@@ -450,6 +452,8 @@ function Seo() {
           </div>
         </div>
       </GlassCard>
+
+      <PromoCard onOk={flash} onError={setError} />
 
       <HeroImageCard onOk={flash} onError={setError} />
 
@@ -797,6 +801,136 @@ function HeroImageCard({
           e.target.value = "";
         }}
       />
+    </GlassCard>
+  );
+}
+
+type PromoDraft = {
+  promoEnabled: boolean;
+  promoPercent: number;
+  promoSeasonStart: string;
+  promoSeasonEnd: string;
+  promoSeasonLabel: string;
+  promoBarText: string;
+  promoPopupText: string;
+};
+
+/** Next-season reservations: the banner, the popup and the discount. */
+function PromoCard({ onOk, onError }: { onOk: (m: string) => void; onError: (m: string) => void }) {
+  const [p, setP] = useState<PromoDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getAdminSettings()
+      .then(({ settings: s }) =>
+        setP({
+          promoEnabled: s.promoEnabled,
+          promoPercent: s.promoPercent,
+          promoSeasonStart: s.promoSeasonStart,
+          promoSeasonEnd: s.promoSeasonEnd,
+          promoSeasonLabel: s.promoSeasonLabel,
+          promoBarText: s.promoBarText,
+          promoPopupText: s.promoPopupText,
+        }),
+      )
+      .catch(() => undefined);
+  }, []);
+
+  if (!p) return null;
+  const set = <K extends keyof PromoDraft>(k: K, v: PromoDraft[K]) => setP({ ...p, [k]: v });
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await savePromo({ data: p });
+      onOk("Season reservations saved. Reload the site to see it.");
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Couldn't save.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard index={3} className="mt-5 p-6">
+      <div className="flex items-center gap-2.5">
+        <Megaphone className="h-4 w-4 text-primary" />
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">Season reservations</p>
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted-foreground">
+        Customers can book dates in an upcoming season now, and get a discount automatically. While
+        it's on, a banner runs across the top of the site and a one-time popup shows on the homepage.
+        Regular bookings keep working as normal.
+      </p>
+
+      <div className="mt-5">
+        <Toggle
+          checked={p.promoEnabled}
+          onChange={(v) => set("promoEnabled", v)}
+          label="Promotion is live"
+          hint="Turn off to hide the banner and popup and stop taking next-season bookings."
+        />
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <Field label="Discount (%)">
+          <input
+            className={inputCls}
+            type="number"
+            min={0}
+            max={90}
+            value={p.promoPercent}
+            onChange={(e) => set("promoPercent", Number(e.target.value))}
+          />
+        </Field>
+        <Field label="Season name" hint='Shown on the site, e.g. "2027 season".'>
+          <input
+            className={inputCls}
+            value={p.promoSeasonLabel}
+            maxLength={40}
+            onChange={(e) => set("promoSeasonLabel", e.target.value)}
+          />
+        </Field>
+        <Field label="Season opens" hint="First day customers can reserve.">
+          <input
+            className={inputCls}
+            type="date"
+            value={p.promoSeasonStart}
+            onChange={(e) => set("promoSeasonStart", e.target.value)}
+          />
+        </Field>
+        <Field label="Season ends" hint="Last day customers can reserve.">
+          <input
+            className={inputCls}
+            type="date"
+            value={p.promoSeasonEnd}
+            onChange={(e) => set("promoSeasonEnd", e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 space-y-4">
+        <Field label="Top banner" hint="{percent} and {season} fill in automatically.">
+          <input
+            className={inputCls}
+            value={p.promoBarText}
+            maxLength={160}
+            onChange={(e) => set("promoBarText", e.target.value)}
+          />
+        </Field>
+        <Field label="Popup message" hint="{percent} and {season} fill in automatically.">
+          <textarea
+            className={`${inputCls} min-h-[80px] resize-y`}
+            value={p.promoPopupText}
+            maxLength={400}
+            onChange={(e) => set("promoPopupText", e.target.value)}
+          />
+        </Field>
+      </div>
+
+      <Button variant="primary" className="mt-5" loading={busy} onClick={save}>
+        Save season reservations
+      </Button>
     </GlassCard>
   );
 }

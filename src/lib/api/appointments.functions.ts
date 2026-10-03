@@ -77,7 +77,7 @@ export function buildBreakdown(
 
   const subtotal = booking.totalPrice;
   if (booking.discount) {
-    lines.push({ label: "Discount", detail: "Coupon", amount: -booking.discount });
+    lines.push({ label: "Discount", detail: "Coupon or season discount", amount: -booking.discount });
   }
   if (booking.tip) {
     lines.push({ label: "Tip", detail: "Added after service", amount: booking.tip });

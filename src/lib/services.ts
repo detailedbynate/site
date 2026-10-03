@@ -162,3 +162,47 @@ export const VEHICLE_COLORS = [
   "Green",
   "Other",
 ] as const;
+
+/**
+ * Ceramic coating tiers, added for the 2027 season. Typical market pricing as
+ * a starting point — the owner edits price, time and wording under Services.
+ * The ids are what mark a service as a coating (see isCoatingService), so the
+ * homepage section and the season-only rule find them.
+ */
+export const CERAMIC_SERVICES: (ServiceDef & { features: string[]; description: string })[] = [
+  {
+    id: "ceramic-1yr",
+    title: "Ceramic 1-Year",
+    subtitle: "1 year of protection",
+    priceValue: 349,
+    durationMinutes: 300,
+    description:
+      "Entry-level ceramic protection. A full decontamination wash and clay, then a 1-year coating on the paint and wheel faces for gloss and easy cleaning.",
+    features: ["Decon wash + clay", "1-year paint coating", "Wheel faces coated", "Water-beading finish"],
+  },
+  {
+    id: "ceramic-3yr",
+    title: "Ceramic 3-Year",
+    subtitle: "3 years of protection",
+    priceValue: 799,
+    durationMinutes: 450,
+    description:
+      "The sweet spot. A one-step polish removes light swirls and boosts gloss before a 3-year coating goes on the paint, wheels and glass.",
+    features: ["Decon wash + clay", "One-step polish", "3-year paint coating", "Wheels + glass coated"],
+  },
+  {
+    id: "ceramic-5yr",
+    title: "Ceramic 5-Year",
+    subtitle: "5 years of protection",
+    priceValue: 1199,
+    durationMinutes: 540,
+    description:
+      "Maximum protection. Two-step paint correction removes swirls and light scratches, then a 5-year coating goes on the paint, wheels, glass and trim.",
+    features: ["Two-step paint correction", "5-year paint coating", "Wheels + glass coated", "Plastic trim coated"],
+  },
+];
+
+/** Ceramic coating tiers are the services whose id starts with "ceramic-". */
+export function isCoatingService(id: string | null | undefined): boolean {
+  return Boolean(id && id.startsWith("ceramic-"));
+}

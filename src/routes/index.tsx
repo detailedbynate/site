@@ -1,20 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion, useInView, useMotionValue, useTransform, animate } from "motion/react";
+import {
+  MotionConfig,
+  animate,
+  motion,
+  useInView,
+  useMotionValue,
+  useTransform,
+} from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { Sparkles, Star, ChevronDown, Calendar, Phone, MapPin, Mail, ArrowRight, ArrowUpRight, Lock } from "lucide-react";
+import { ArrowRight, Check, Droplets, Phone, Plus, ShieldCheck, Snowflake } from "lucide-react";
+
 import heroCar from "@/assets/hero-car.jpg";
 import serviceDiamond from "@/assets/service-diamond.jpg";
 import serviceGold from "@/assets/service-gold.jpg";
 import serviceSilver from "@/assets/service-silver.jpg";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { useBookingModal } from "@/components/booking/BookingModal";
+import { PromoPopup } from "@/components/site/PromoPopup";
+import {
+  BookingBand,
+  Container,
+  SiteFooter,
+  SiteNav,
+  Stars,
+} from "@/components/site/SiteChrome";
 import { getCatalog, getPublicGallery } from "@/lib/api/booking.functions";
 import {
   getHeroImage,
   getPublicFaqs,
   getPublicTestimonials,
 } from "@/lib/api/content.functions";
-import type { ServiceId } from "@/lib/services";
+import { isCoatingService, type ServiceId } from "@/lib/services";
 
 export const Route = createFileRoute("/")({
   // No head override here on purpose: the homepage's title and description
@@ -36,6 +52,8 @@ export const Route = createFileRoute("/")({
       ]);
       return {
         services: catalog.services,
+        travelFee: catalog.travelFee,
+        promo: catalog.promo,
         business: catalog.business,
         gallery: gallery.pairs,
         reviews: reviews.testimonials,
@@ -45,6 +63,8 @@ export const Route = createFileRoute("/")({
     } catch {
       return {
         services: null,
+        travelFee: 0,
+        promo: null,
         business: null,
         gallery: [],
         reviews: [],
@@ -74,43 +94,54 @@ function Counter({ to, suffix = "" }: { to: number; suffix?: string }) {
 }
 
 /**
- * Imagery and layout order live here; price, title, blurb and feature list
- * come from the database and are merged in below by id. Anything the admin
- * can edit must NOT be duplicated here, or the two will drift.
+ * Layout order, imagery and fallback copy for each package. Price, title,
+ * blurb, features and duration come from the database and are merged in
+ * below by id — anything the admin can edit must NOT be relied on from here.
+ * The photos are placeholders until real ones are uploaded.
  */
 const serviceCards = [
   {
     id: "diamond",
-    tier: "01",
     image: serviceDiamond,
     title: "Diamond",
     subtitle: "Interior & Exterior",
-    price: "From $399",
+    priceValue: 399,
     desc: "The full obsession. Two-bucket exterior decon wash, clay bar and seal, plus a complete interior reset — steam, leather conditioning, and every vent detailed.",
     features: ["Full exterior decon + wax", "Complete interior deep clean", "Tire & trim dressing", "Glass + jambs"],
     popular: true,
   },
   {
     id: "gold",
-    tier: "02",
     image: serviceGold,
     title: "Gold",
     subtitle: "Interior",
-    price: "From $199",
+    priceValue: 199,
     desc: "Cabin restored to factory-fresh. Steam extraction on carpets and seats, leather conditioned, every crevice, vent and stitch line touched by hand.",
     features: ["Steam extraction", "Leather condition", "Vents + crevices", "Glass interior"],
     popular: false,
   },
   {
     id: "silver",
-    tier: "03",
     image: serviceSilver,
     title: "Silver",
     subtitle: "Exterior",
-    price: "From $149",
+    priceValue: 149,
     desc: "A proper hand wash that protects your paint. Foam pre-soak, two-bucket method, wheels degreased, and a sealant for that deep wet shine.",
     features: ["Foam pre-soak", "Two-bucket hand wash", "Wheels + tires", "Spray sealant"],
     popular: false,
+  },
+];
+
+const steps = [
+  { title: "Choose a package", text: "Diamond, Gold or Silver, plus any add-ons you want." },
+  { title: "Pick a time", text: "Open slots are live, so booking takes about a minute." },
+  {
+    title: "Drop off or stay home",
+    text: "Bring it to the studio, or I come to you with my own water and power.",
+  },
+  {
+    title: "Drive away showroom-ready",
+    text: "Every package includes a pre-detail inspection, so nothing gets missed.",
   },
 ];
 
@@ -131,17 +162,55 @@ const fallbackFaqs = [
   { q: "Do you offer maintenance packages?", a: "Absolutely. Monthly and bi-weekly maintenance plans keep your finish protected and save you money long-term." },
 ];
 
+/** "About 4 hours" reads better than "240 minutes". Half-hour precision. */
+function formatDuration(minutes?: number): string | null {
+  if (!minutes) return null;
+  if (minutes < 60) return `${minutes} minutes`;
+  const h = Math.round((minutes / 60) * 2) / 2;
+  return `${h} hour${h === 1 ? "" : "s"}`;
+}
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((n) => n[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+/**
+ * The hero settles in, in order, once. Nothing else on the page animates on
+ * its own — sections below simply appear as you scroll.
+ */
+const rise = (delay: number) => ({
+  initial: { opacity: 0, y: 22 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.7, delay, ease: [0.22, 1, 0.36, 1] as const },
+});
+
+function SectionHeading({ label, title }: { label: string; title: string }) {
+  return (
+    <div>
+      <p className="site-label text-[var(--sky)]">{label}</p>
+      <h2 className="mt-3 text-[clamp(2.2rem,4.6vw,3.75rem)] leading-[1]">{title}</h2>
+    </div>
+  );
+}
+
 function Index() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const booking = useBookingModal();
   const {
     services: liveServices,
+    travelFee,
+    promo,
     business,
     gallery,
     reviews: liveReviews,
     faqs: liveFaqs,
     hero,
   } = Route.useLoaderData();
+
   // Hero copy and the counters are editable in SEO & branding. The literals
   // here are only a fallback for a fresh install.
   const heroUrl = hero?.url ?? null;
@@ -168,26 +237,26 @@ function Index() {
       label: hero ? hero.statVehiclesLabel : "vehicles detailed",
     },
   ].filter((s) => s.label.trim());
+
   // Both editable in the admin; the bundled versions are only a fallback for
   // a fresh install whose tables somehow came back empty.
   const faqs = liveFaqs?.length ? liveFaqs : fallbackFaqs;
-  // Editable from /admin/testimonials. The bundled set is only a fallback for
-  // a brand-new install whose table somehow came back empty.
   const reviews = liveReviews?.length ? liveReviews : fallbackReviews;
-  // Uploaded pairs (Admin → SEO & branding) replace the bundled samples once
-  // there are any, so the homepage shows real work rather than stock shots.
-  // Only the shop's own uploaded work (Admin -> SEO & branding). Bundled
-  // stock shots used to fill this row, which meant the homepage showed
-  // photos of cars Nate never touched. The whole section hides when there
-  // is nothing real to show.
+  const ratings = reviews.map((r) => r.rating);
+  const average = ratings.length ? ratings.reduce((s, n) => s + n, 0) / ratings.length : 5;
+
+  // Only the shop's own uploaded work (Admin -> SEO & branding). The whole
+  // section hides when there is nothing real to show.
   const shownPairs = (gallery ?? []).filter((g) => g.beforeUrl && g.afterUrl).slice(0, 2);
+
   // Contact details are editable in Settings, so they're read rather than
   // hardcoded — otherwise changing them there would silently do nothing.
   const phone = business?.phone ?? "(555) 123-4567";
   const email = business?.email ?? "book@detailedbynate.com";
   const area = business?.serviceArea ?? "Sault Ste. Marie area";
+  const tel = `tel:${phone.replace(/[^\d+]/g, "")}`;
 
-  // Merge live catalog values over the local card presets. A package that has
+  // Merge live catalog values over the local presets. A package that has
   // been deactivated in the admin drops off the homepage entirely, so the
   // site never advertises something nobody can book.
   const services = serviceCards
@@ -198,442 +267,484 @@ function Index() {
         ...card,
         title: live?.title ?? card.title,
         subtitle: live?.subtitle ?? card.subtitle,
-        price: live ? `From $${live.priceValue}` : card.price,
+        priceValue: live?.priceValue ?? card.priceValue,
         desc: live?.description || card.desc,
         features: live?.features?.length ? live.features : card.features,
+        duration: formatDuration(live?.durationMinutes),
       };
     })
-    .filter(Boolean) as (typeof serviceCards[number])[];
+    .filter((s): s is NonNullable<typeof s> => s !== null);
+
+  const statCells = statPills.length + (heroPill.trim() ? 1 : 0);
+
+  // Ceramic coating tiers, straight from the catalog so price, time and
+  // wording are edited under Services like any package.
+  const coatings = (liveServices ?? []).filter((s) => isCoatingService(s.id));
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
-      {/* Nav */}
-      <motion.nav
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6 }}
-        className="fixed top-0 left-0 right-0 z-50 glass"
-      >
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <a href="#top" className="font-display font-bold text-lg tracking-tight">
-            Detailed <span className="text-primary glow-text">by Nate</span>
-          </a>
-          <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
-            <a href="#services" className="hover:text-primary transition-colors">Services</a>
-            <Link to="/results" className="hover:text-primary transition-colors">Results</Link>
-            <Link to="/book" className="hover:text-primary transition-colors">Book</Link>
-            <a href="#faq" className="hover:text-primary transition-colors">FAQ</a>
-          </div>
-          <button
-            type="button"
-            onClick={() => booking.open()}
-            className="px-5 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold hover:scale-105 transition-transform animate-pulse-glow"
-          >
-            Book Now
-          </button>
-        </div>
-      </motion.nav>
+    <MotionConfig reducedMotion="user">
+      <div className="site min-h-screen overflow-x-clip">
+        <SiteNav phone={phone} />
+        <PromoPopup promo={promo} image={heroUrl ?? heroCar} />
 
-      {/* Hero */}
-      <section id="top" className="relative min-h-screen flex items-center pt-24 pb-16">
-        <div className="absolute inset-0 -z-10">
+        {/* Hero — full-bleed photo with frosted panels over it. An uploaded
+            hero photo (SEO & branding) replaces the placeholder. */}
+        <section
+          id="top"
+          className="relative isolate flex min-h-[100svh] flex-col justify-end overflow-hidden pb-8 pt-44 md:pb-12"
+        >
           <motion.img
             src={heroUrl ?? heroCar}
-            alt="Freshly detailed glossy black sports car under studio lighting"
-            width={1920}
-            height={1080}
-            initial={{ scale: 1.1, opacity: 0 }}
-            animate={{ scale: 1, opacity: 0.55 }}
-            transition={{ duration: 1.6, ease: "easeOut" }}
-            className="w-full h-full object-cover"
+            alt=""
+            aria-hidden
+            initial={{ scale: 1.06 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 1.8, ease: "easeOut" }}
+            className="absolute inset-0 -z-20 h-full w-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background" />
-        </div>
+          <div
+            aria-hidden
+            className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(10,10,12,0.92)_0%,rgba(10,10,12,0.72)_45%,rgba(10,10,12,0.25)_100%)]"
+          />
+          <div
+            aria-hidden
+            className="absolute inset-x-0 bottom-0 -z-10 h-56 bg-gradient-to-t from-[var(--ink)] to-transparent"
+          />
 
-        <div className="max-w-7xl mx-auto px-6 w-full">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="mx-auto max-w-5xl text-center"
-          >
+          <Container>
             {heroBadge && (
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass mb-8 text-xs tracking-wide text-foreground/90">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_var(--primary)]" />
+              <motion.p
+                {...rise(0)}
+                className="site-glass inline-flex items-center gap-2.5 rounded-full px-4 py-2 text-[14px] text-white/90"
+              >
+                <span aria-hidden className="h-2 w-2 rounded-full bg-[var(--estoril)] shadow-[0_0_10px_var(--estoril)]" />
                 {heroBadge}
-              </div>
+              </motion.p>
             )}
-            <h1 className="font-helvetica font-bold tracking-[-0.04em] leading-[0.92] text-[clamp(3rem,9vw,8.5rem)] mb-8">
-              <span className="block text-foreground">{heroHeadline}</span>
-              <span className="block text-primary glow-text">{heroAccent}</span>
+            <h1 className="mt-6 max-w-[14ch] text-[clamp(2.9rem,7vw,6.25rem)] leading-[0.98]">
+              <motion.span {...rise(0.06)} className="block">
+                {heroHeadline}
+              </motion.span>
+              <motion.span {...rise(0.14)} className="block">
+                {heroAccent}
+              </motion.span>
             </h1>
-            <p className="text-base md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
+            <motion.p
+              {...rise(0.22)}
+              className="mt-6 max-w-[52ch] text-[17px] leading-relaxed text-white/75 md:text-[19px]"
+            >
               {heroSubtext}
-            </p>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <motion.button
-                type="button"
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => booking.open()}
-                className="btn-liquid inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold shadow-[0_10px_40px_-10px_var(--primary)]"
+            </motion.p>
+            <motion.div {...rise(0.3)} className="mt-9 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => booking.open()} className="site-btn">
+                Book your detail <ArrowRight aria-hidden className="h-4 w-4" />
+              </button>
+              <a href="#packages" className="site-btn-quiet">
+                View packages
+              </a>
+              <a
+                href={tel}
+                className="site-display ml-1 inline-flex items-center gap-2 px-2 text-[17px] text-white transition-colors hover:text-[var(--sky)]"
               >
-                Book Now <ArrowRight className="w-4 h-4" />
-              </motion.button>
-              <motion.a
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                href="#services"
-                className="liquid-glass inline-flex items-center gap-2 px-8 py-4 rounded-full text-foreground font-semibold hover:border-primary/50 transition-colors"
+                <Phone aria-hidden className="h-4 w-4" />
+                {phone}
+              </a>
+            </motion.div>
+
+            {/* Frosted stats bar over the photo — the editable counters. */}
+            {statCells > 0 && (
+              <motion.dl
+                {...rise(0.4)}
+                className={`site-glass mt-14 grid grid-cols-2 overflow-hidden rounded-[22px] md:mt-20 ${
+                  statCells >= 4 ? "md:grid-cols-4" : statCells === 3 ? "md:grid-cols-3" : "md:grid-cols-2"
+                }`}
               >
-                See services
-              </motion.a>
-            </div>
-
-            {/* Stat pills */}
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-              {statPills.map((s, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 14, filter: "blur(6px)" }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  transition={{ duration: 0.6, delay: 0.7 + i * 0.12 }}
-                  whileHover={{ y: -3, scale: 1.04 }}
-                  className="liquid-glass rounded-full px-5 py-2.5 flex items-center gap-2.5"
-                >
-                  <span className="text-lg font-bold text-primary glow-text">
-                    <Counter to={s.value} suffix={s.suffix} />
-                  </span>
-                  {s.stars && (
-                    <span className="flex gap-0.5">
-                      {[...Array(5)].map((_, j) => (
-                        <Star key={j} className="w-3 h-3 fill-primary text-primary" />
-                      ))}
-                    </span>
-                  )}
-                  <span className="text-xs uppercase tracking-widest text-muted-foreground">{s.label}</span>
-                </motion.div>
-              ))}
-              {heroPill.trim() && (
-                <motion.div
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 1.06 }}
-                  whileHover={{ y: -3, scale: 1.04 }}
-                  className="liquid-glass rounded-full px-5 py-2.5 text-[11px] tracking-[0.2em] uppercase text-muted-foreground"
-                >
-                  {heroPill}
-                </motion.div>
-              )}
-            </div>
-
-          </motion.div>
-        </div>
-
-        <motion.div
-          animate={{ y: [0, 10, 0] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 text-muted-foreground"
-        >
-          <ChevronDown className="w-6 h-6" />
-        </motion.div>
-      </section>
-
-      {/* Ambient aurora */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="animate-aurora absolute top-1/4 -left-40 w-[36rem] h-[36rem] rounded-full bg-primary/10 blur-[140px]" />
-        <div className="animate-aurora absolute bottom-0 -right-40 w-[32rem] h-[32rem] rounded-full bg-primary/[0.07] blur-[130px]" style={{ animationDelay: "-6s" }} />
-      </div>
-
-
-
-      {/* Services */}
-      <section id="services" className="py-24 relative">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <p className="text-primary uppercase tracking-widest text-sm mb-3">Packages</p>
-            <h2 className="text-4xl md:text-6xl font-bold tracking-tight">Built for the obsessed.</h2>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {services.map((s, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 50, filter: "blur(8px)" }}
-                whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.7, delay: i * 0.12, ease: [0.16, 1, 0.3, 1] }}
-                whileHover={{ y: -10 }}
-                className={
-                  s.popular
-                    ? "group relative rounded-3xl liquid-glass flex flex-col min-h-[640px] shadow-[0_0_50px_-10px_var(--primary)] hover:border-primary/60 transition-colors animate-pulse-glow"
-                    : "group relative rounded-3xl liquid-glass flex flex-col min-h-[640px] hover:border-primary/40 transition-colors"
-                }
-              >
-                {s.popular && (
-                  <div className="absolute top-4 right-4 z-10 px-3 py-1 rounded-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-[10px] font-bold uppercase tracking-widest shadow-[0_0_20px_var(--primary)]">
-                    Most Popular
+                {statPills.map((s) => (
+                  <div
+                    key={s.label}
+                    className="flex flex-col-reverse border-white/10 px-6 py-6 md:border-l md:first:border-l-0"
+                  >
+                    <dt className="mt-1.5 text-[14px] text-white/65">{s.label}</dt>
+                    <dd className="flex items-center gap-3">
+                      <span className="site-display tnum text-[clamp(1.9rem,3.4vw,2.6rem)] leading-none">
+                        <Counter to={s.value} suffix={s.suffix} />
+                      </span>
+                      {s.stars && <Stars className="hidden text-[var(--amber)] sm:inline-flex" />}
+                    </dd>
+                  </div>
+                ))}
+                {heroPill.trim() && (
+                  <div className="col-span-2 flex items-center border-t border-white/10 px-6 py-6 md:col-span-1 md:border-l md:border-t-0">
+                    <p className="text-[15px] font-medium leading-snug text-white/85">{heroPill}</p>
                   </div>
                 )}
-                <div className="relative h-[340px] overflow-hidden">
-                  <img
-                    src={s.image}
-                    alt={`${s.title} detailing package`}
-                    loading="lazy"
-                    width={1024}
-                    height={1024}
-                    className="w-full h-full object-cover transition-transform duration-[900ms] ease-out group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-card via-card/25 to-transparent" />
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-primary/20 via-transparent to-transparent" />
-                  <span className="absolute top-4 left-4 font-mono text-xs text-primary tracking-wider">{s.tier}</span>
-                </div>
-                <div className="flex flex-col flex-1 p-8">
-                  <div className="flex items-baseline justify-between gap-4 mb-1">
-                    <h3 className="text-2xl font-bold tracking-tight">{s.title}</h3>
-                    <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">{s.price}</span>
-                  </div>
-                  <p className="text-sm text-primary/80 uppercase tracking-widest mb-5">{s.subtitle}</p>
-                  <p className="text-muted-foreground leading-relaxed mb-6">{s.desc}</p>
-                  <ul className="space-y-2 mb-8">
-                    {s.features.map((f) => (
-                      <li key={f} className="flex items-center gap-2 text-sm text-foreground/80">
-                        <span className="w-1 h-1 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    onClick={() => booking.open(s.id as ServiceId)}
-                    className="btn-liquid mt-auto w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold text-sm shadow-[0_10px_30px_-10px_var(--primary)] hover:shadow-[0_16px_44px_-10px_var(--primary)]"
-                  >
-                    Book {s.title} <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                  </button>
-                </div>
-              </motion.div>
+              </motion.dl>
+            )}
+          </Container>
+        </section>
 
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Reviews */}
-      <section id="reviews" className="py-24 relative">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <p className="text-primary uppercase tracking-widest text-sm mb-3">Loved by Drivers</p>
-            <h2 className="text-4xl md:text-6xl font-bold mb-4">5 stars, every time.</h2>
-            <div className="flex justify-center gap-1">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} className="w-6 h-6 fill-primary text-primary" />
-              ))}
+        {/* Packages */}
+        <section id="packages" className="site-glow scroll-mt-24">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-[58%] -z-10 h-[560px] w-[min(1000px,100%)] -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(closest-side,rgba(47,107,255,0.2),transparent)]"
+          />
+          <Container className="py-24 md:py-32">
+            <div className="flex flex-wrap items-end justify-between gap-6">
+              <SectionHeading label="Packages" title="Choose your detail" />
+              <p className="max-w-[44ch] leading-relaxed text-[var(--text-muted)]">
+                Every package is done by hand.
+                {travelFee > 0 && ` Mobile service adds $${travelFee} for travel.`} Add-ons are
+                chosen when you book.
+              </p>
             </div>
-          </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {reviews.map((r, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 48, rotateX: 8, filter: "blur(8px)" }}
-                whileInView={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.7, delay: (i % 3) * 0.14, ease: [0.16, 1, 0.3, 1] }}
-                whileHover={{ y: -10, scale: 1.02, transition: { type: "spring", stiffness: 260, damping: 18 } }}
-                className="group liquid-glass rounded-3xl p-7 relative hover:border-primary/45 transition-colors"
-              >
-                <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-primary/12 via-transparent to-transparent" />
-                <div className="relative">
-                  <div className="flex gap-0.5 mb-4">
-                    {[...Array(r.rating)].map((_, j) => (
-                      <motion.div
-                        key={j}
-                        initial={{ opacity: 0, scale: 0, rotate: -30 }}
-                        whileInView={{ opacity: 1, scale: 1, rotate: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ delay: 0.25 + j * 0.07, type: "spring", stiffness: 300, damping: 14 }}
-                      >
-                        <Star className="w-4 h-4 fill-primary text-primary drop-shadow-[0_0_6px_var(--primary)]" />
-                      </motion.div>
-                    ))}
+            <div className="mt-14 grid gap-5 md:grid-cols-3">
+              {services.map((s) => (
+                <article
+                  key={s.id}
+                  className={`site-card group relative isolate flex flex-col rounded-[24px] p-2.5 transition-[transform,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform hover:-translate-y-2 ${
+                    s.popular
+                      ? "border-[var(--estoril)]/80 shadow-[0_0_0_1px_rgba(47,107,255,0.35),0_30px_90px_-30px_rgba(47,107,255,0.85)]"
+                      : "shadow-[0_24px_70px_-34px_rgba(47,107,255,0.55)] hover:border-[var(--sky)]/40"
+                  }`}
+                >
+                  {/* The stronger hover glow, faded in. Fading a ready-made
+                      shadow is cheap; animating the shadow itself repaints a
+                      100px blur on every frame. */}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 shadow-[0_40px_110px_-26px_rgba(47,107,255,0.95)] transition-opacity duration-500 group-hover:opacity-100"
+                  />
+                  {/* Light catching the top edge of the glass. */}
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[var(--sky)] to-transparent opacity-70"
+                  />
+                  {/* A soft blue bloom from the top that brightens on hover. */}
+                  <span
+                    aria-hidden
+                    className={`pointer-events-none absolute inset-0 rounded-[24px] bg-[radial-gradient(120%_60%_at_50%_0%,rgba(47,107,255,0.2),transparent_60%)] transition-opacity duration-300 group-hover:opacity-100 ${
+                      s.popular ? "opacity-100" : "opacity-50"
+                    }`}
+                  />
+                  <div className="relative aspect-[16/10] overflow-hidden rounded-[17px]">
+                    <img
+                      src={s.image}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform group-hover:scale-[1.05]"
+                    />
+                    {s.popular && (
+                      <span className="site-glass absolute left-3 top-3 rounded-full bg-[var(--estoril)]/80 px-3 py-1 text-[13px] font-bold text-white">
+                        Most popular
+                      </span>
+                    )}
                   </div>
-                  <p className="text-foreground/90 leading-relaxed mb-5">"{r.text}"</p>
-                  <div className="pt-4 border-t border-white/10 flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
-                      {r.name.split(" ").map((n) => n[0]).join("")}
-                    </span>
-                    <div>
-                      <p className="font-semibold text-sm">{r.name}</p>
-                      <p className="text-xs text-muted-foreground">{r.car}</p>
+
+                  <div className="relative flex flex-1 flex-col px-5 pb-5 pt-6">
+                    <p className="text-[14px] text-[var(--sky)]">{s.subtitle}</p>
+                    <h3 className="mt-1.5 text-[30px] leading-none">{s.title}</h3>
+                    <p className="site-display tnum mt-6 text-[46px] leading-none">${s.priceValue}</p>
+                    <p className="mt-2 text-[14px] text-[var(--text-muted)]">
+                      Starting price{s.duration ? ` · about ${s.duration}` : ""}
+                    </p>
+                    <p className="mt-5 text-[15.5px] leading-relaxed text-[var(--text-muted)]">{s.desc}</p>
+                    <ul className="mt-5 space-y-2.5 border-t border-white/10 pt-5 text-[15px]">
+                      {s.features.map((f) => (
+                        <li key={f} className="flex gap-2.5">
+                          <Check aria-hidden className="mt-[3px] h-4 w-4 shrink-0 text-[var(--sky)]" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-auto pt-8">
+                      <button
+                        type="button"
+                        onClick={() => booking.open(s.id as ServiceId)}
+                        className={`${s.popular ? "site-btn" : "site-btn-quiet"} w-full`}
+                      >
+                        Book {s.title}
+                      </button>
                     </div>
                   </div>
+                </article>
+              ))}
+            </div>
+          </Container>
+        </section>
+
+        {/* Ceramic coating — a separate offer from the detail packages: priced
+            and timed differently, and (while next-season reservations run)
+            booked only for the season. Hidden if every tier is switched off. */}
+        {coatings.length > 0 && (
+          <section id="ceramic" className="site-glow scroll-mt-24 border-t border-[var(--line)]">
+            <Container className="py-24 md:py-32">
+              <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-end">
+                <div>
+                  <span className="inline-flex items-center rounded-full bg-[var(--estoril)]/15 px-3 py-1 text-[13px] font-bold text-[var(--sky)] ring-1 ring-inset ring-[var(--estoril)]/40">
+                    New for {promo?.enabled ? promo.seasonLabel : "2027"}
+                  </span>
+                  <h2 className="mt-4 text-[clamp(2.2rem,4.6vw,3.75rem)] leading-[1]">Ceramic coating</h2>
+                  <p className="mt-5 max-w-[50ch] leading-relaxed text-[var(--text-muted)]">
+                    A hard, glossy layer that bonds to your paint and protects it for years. Water and
+                    dirt slide off, washes take half the time, and the shine lasts long after wax
+                    would be gone.
+                  </p>
                 </div>
-              </motion.div>
-            ))}
+                <ul className="grid gap-3 sm:grid-cols-3">
+                  {[
+                    { icon: ShieldCheck, text: "Protection that lasts years, not weeks" },
+                    { icon: Droplets, text: "Water beads and rolls straight off" },
+                    { icon: Snowflake, text: "Stands up to road salt and winter grime" },
+                  ].map(({ icon: Icon, text }) => (
+                    <li key={text} className="site-glass rounded-[18px] p-5">
+                      <Icon aria-hidden className="h-5 w-5 text-[var(--sky)]" />
+                      <p className="mt-3 text-[15px] leading-snug">{text}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-          </div>
-        </div>
-      </section>
+              <div className="mt-14 grid gap-5 md:grid-cols-3">
+                {coatings.map((c) => {
+                  const featured = c.id === "ceramic-3yr";
+                  const duration = formatDuration(c.durationMinutes);
+                  return (
+                    <article
+                      key={c.id}
+                      className={`site-card group relative isolate flex flex-col rounded-[24px] p-7 transition-[transform,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform hover:-translate-y-2 ${
+                        featured
+                          ? "border-[var(--estoril)]/80 shadow-[0_0_0_1px_rgba(47,107,255,0.35),0_30px_90px_-30px_rgba(47,107,255,0.85)]"
+                          : "shadow-[0_24px_70px_-34px_rgba(47,107,255,0.55)] hover:border-[var(--sky)]/40"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 shadow-[0_40px_110px_-26px_rgba(47,107,255,0.95)] transition-opacity duration-500 group-hover:opacity-100"
+                      />
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[var(--sky)] to-transparent opacity-70"
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[14px] text-[var(--sky)]">{c.subtitle}</p>
+                        {featured && (
+                          <span className="rounded-full bg-[var(--estoril)] px-2.5 py-0.5 text-[12px] font-bold text-white">
+                            Most popular
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="mt-1.5 text-[28px] leading-none">{c.title}</h3>
+                      <p className="site-display tnum mt-6 text-[46px] leading-none">${c.priceValue}</p>
+                      <p className="mt-2 text-[14px] text-[var(--text-muted)]">
+                        Starting price{duration ? ` · about ${duration}` : ""}
+                      </p>
+                      {c.description && (
+                        <p className="mt-5 text-[15.5px] leading-relaxed text-[var(--text-muted)]">
+                          {c.description}
+                        </p>
+                      )}
+                      {c.features.length > 0 && (
+                        <ul className="mt-5 space-y-2.5 border-t border-white/10 pt-5 text-[15px]">
+                          {c.features.map((f) => (
+                            <li key={f} className="flex gap-2.5">
+                              <Check aria-hidden className="mt-[3px] h-4 w-4 shrink-0 text-[var(--sky)]" />
+                              {f}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="mt-auto pt-8">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            booking.open(c.id as ServiceId, { season: Boolean(promo?.enabled) })
+                          }
+                          className={`${featured ? "site-btn" : "site-btn-quiet"} w-full`}
+                        >
+                          {promo?.enabled ? `Reserve ${c.title}` : `Book ${c.title}`}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
 
-      {/* Book / CTA */}
-      <section id="book" className="py-24 relative">
-        <div className="max-w-5xl mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="liquid-glass rounded-3xl p-10 md:p-16 text-center relative"
-          >
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5" />
-            <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-aurora" />
-            <div className="relative">
-              <h2 className="text-4xl md:text-6xl font-bold mb-4">Ready to look brand new?</h2>
-              <p className="text-muted-foreground text-lg mb-8 max-w-xl mx-auto">
-                Book a slot in under 60 seconds. I'll confirm same day.
+              <p className="mt-8 max-w-[80ch] text-[14px] leading-relaxed text-[var(--text-muted)]">
+                A coating needs time to set before the car goes back out, so plan to leave it with me
+                for the day. Keep it dry for 24 hours and skip washes for the first week.
+                {promo?.enabled &&
+                  ` Reserve for the ${promo.seasonLabel} and get ${promo.percent}% off automatically.`}
               </p>
-              <button
-                type="button"
-                onClick={() => booking.open()}
-                className="btn-liquid inline-flex items-center gap-2 px-8 py-4 rounded-full bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold text-lg animate-pulse-glow"
-              >
-                <Calendar className="w-5 h-5" /> Book Now
-              </button>
+            </Container>
+          </section>
+        )}
 
-              <div className="mt-10 flex flex-wrap justify-center gap-x-8 gap-y-3 text-sm text-muted-foreground">
-                <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-2 transition-colors hover:text-primary"><Phone className="w-4 h-4 text-primary" /> {phone}</a>
-                <a href={`mailto:${email}`} className="inline-flex items-center gap-2 transition-colors hover:text-primary"><Mail className="w-4 h-4 text-primary" /> {email}</a>
-                <span className="inline-flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> {area}</span>
+        {/* How it works — a real sequence, so it's numbered. */}
+        <section id="process" className="site-glow scroll-mt-24 border-y border-[var(--line)]">
+          <Container className="py-24 md:py-28">
+            <SectionHeading label="How it works" title="Booked in a minute. Done by hand." />
+            <ol className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {steps.map((step, i) => {
+                const delay = i * 0.15;
+                const inView = { once: true, amount: 0.35 } as const;
+                return (
+                  <motion.li
+                    key={step.title}
+                    initial={{ opacity: 0, y: 44 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={inView}
+                    transition={{ duration: 0.7, delay, ease: [0.22, 1, 0.36, 1] }}
+                    className="site-card relative overflow-hidden rounded-[22px] p-7"
+                  >
+                    <motion.span
+                      initial={{ scale: 0.4, opacity: 0 }}
+                      whileInView={{ scale: 1, opacity: 1 }}
+                      viewport={inView}
+                      transition={{ type: "spring", stiffness: 320, damping: 16, delay: delay + 0.25 }}
+                      className="site-display flex h-10 w-10 items-center justify-center rounded-full bg-[var(--estoril)] text-[16px] text-white shadow-[0_0_24px_-4px_var(--estoril)]"
+                    >
+                      {i + 1}
+                    </motion.span>
+                    <h3 className="mt-6 text-[21px] leading-tight">{step.title}</h3>
+                    <p className="mt-3 leading-relaxed text-[var(--text-muted)]">{step.text}</p>
+                    <motion.span
+                      aria-hidden
+                      initial={{ scaleX: 0 }}
+                      whileInView={{ scaleX: 1 }}
+                      viewport={inView}
+                      transition={{ duration: 0.9, delay: delay + 0.35, ease: [0.22, 1, 0.36, 1] }}
+                      className="absolute inset-x-0 bottom-0 h-[2px] origin-left bg-gradient-to-r from-[var(--estoril)] to-[var(--sky)]"
+                    />
+                  </motion.li>
+                );
+              })}
+            </ol>
+          </Container>
+        </section>
+
+        {/* Before & after. Hidden entirely until there's real work to show. */}
+        {shownPairs.length > 0 && (
+          <section id="results">
+            <Container className="py-24 md:py-32">
+              <div className="flex flex-wrap items-end justify-between gap-6">
+                <SectionHeading label="Results" title="Before and after" />
+                <Link to="/results" className="site-btn-quiet site-btn-sm">
+                  See all results
+                </Link>
+              </div>
+              <p className="mt-5 text-[var(--text-muted)]">Drag the handle to compare.</p>
+              <div className="mt-10 grid gap-6 md:grid-cols-2">
+                {shownPairs.map((g) => (
+                  <BeforeAfter
+                    key={g.id}
+                    before={g.beforeUrl as string}
+                    after={g.afterUrl as string}
+                    label={g.label}
+                  />
+                ))}
+              </div>
+            </Container>
+          </section>
+        )}
+
+        {/* Reviews */}
+        <section id="reviews" className="site-glow scroll-mt-24">
+          <Container className="py-24 md:py-32">
+            <div className="flex flex-wrap items-end justify-between gap-8">
+              <SectionHeading label="Reviews" title="What customers say" />
+              <div className="site-glass flex items-center gap-4 rounded-[18px] px-5 py-4">
+                <span className="site-display tnum text-[42px] leading-none">{average.toFixed(1)}</span>
+                <div>
+                  <Stars count={Math.round(average)} className="text-[var(--amber)]" />
+                  <p className="mt-1 text-[13.5px] text-[var(--text-muted)]">
+                    from {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                  </p>
+                </div>
               </div>
             </div>
-          </motion.div>
-        </div>
-      </section>
 
-      {/* Before & After preview. Hidden entirely until there's real work to
-          show — an empty grid or stock photos would both be worse. */}
-      {shownPairs.length > 0 && (
-      <section id="results" className="py-24 relative">
-        <div className="max-w-7xl mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-12"
-          >
+            <ul className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {reviews.map((r, i) => (
+                <li key={i} className="site-glass flex flex-col rounded-[22px] p-7">
+                  <Stars count={r.rating} className="text-[var(--amber)]" />
+                  <blockquote className="mt-4 flex-1 text-[16.5px] leading-relaxed text-white/90">
+                    “{r.text}”
+                  </blockquote>
+                  <div className="mt-6 flex items-center gap-3 border-t border-white/10 pt-5">
+                    <span className="site-display flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--estoril)] text-[14px] text-white">
+                      {initials(r.name)}
+                    </span>
+                    <div>
+                      <p className="font-bold">{r.name}</p>
+                      {r.car && <p className="text-[14px] text-[var(--text-muted)]">{r.car}</p>}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Container>
+        </section>
+
+        <BookingBand phone={phone} email={email} area={area} />
+
+        {/* FAQ */}
+        <section id="faq" className="site-glow scroll-mt-24">
+          <Container className="grid gap-12 py-24 md:py-32 lg:grid-cols-[1fr_1.6fr]">
             <div>
-              <p className="text-primary uppercase tracking-widest text-sm mb-3">Before · After</p>
-              <h2 className="text-4xl md:text-6xl font-bold tracking-tight">Drag. See the difference.</h2>
+              <SectionHeading label="FAQ" title="Common questions" />
+              <p className="mt-6 max-w-[36ch] leading-relaxed text-[var(--text-muted)]">
+                Something not covered here? Call{" "}
+                <a href={tel} className="font-bold text-white underline underline-offset-4">
+                  {phone}
+                </a>
+                .
+              </p>
             </div>
-            <Link
-              to="/results"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-border hover:border-primary/60 transition-colors text-sm font-semibold whitespace-nowrap"
-            >
-              See full gallery <ArrowUpRight className="w-4 h-4" />
-            </Link>
-          </motion.div>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {shownPairs.map((g) => (
-              <BeforeAfter
-                key={g.id}
-                before={g.beforeUrl as string}
-                after={g.afterUrl as string}
-                label={g.label}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-      )}
+            <div className="space-y-3">
+              {faqs.map((f, i) => {
+                const open = openFaq === i;
+                return (
+                  <div key={i} className="site-glass rounded-[18px]">
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => setOpenFaq(open ? null : i)}
+                      className="flex w-full items-center justify-between gap-6 px-6 py-5 text-left text-[17px] font-bold"
+                    >
+                      {f.q}
+                      <motion.span
+                        animate={{ rotate: open ? 45 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                          open ? "bg-[var(--estoril)] text-white" : "bg-white/10 text-white"
+                        }`}
+                      >
+                        <Plus aria-hidden className="h-4 w-4" />
+                      </motion.span>
+                    </button>
+                    <motion.div
+                      initial={false}
+                      animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="overflow-hidden"
+                    >
+                      <p className="max-w-[64ch] px-6 pb-6 leading-relaxed text-[var(--text-muted)]">
+                        {f.a}
+                      </p>
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+          </Container>
+        </section>
 
-
-      {/* FAQ */}
-      <section id="faq" className="py-24 relative">
-        <div className="max-w-3xl mx-auto px-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
-          >
-            <p className="text-primary uppercase tracking-widest text-sm mb-3">FAQ</p>
-            <h2 className="text-4xl md:text-5xl font-bold">Common questions.</h2>
-          </motion.div>
-
-          <div className="space-y-3">
-            {faqs.map((f, i) => {
-              const open = openFaq === i;
-              return (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.05 }}
-                  className="glass rounded-xl overflow-hidden"
-                >
-                  <button
-                    onClick={() => setOpenFaq(open ? null : i)}
-                    className="w-full px-6 py-5 flex items-center justify-between text-left hover:bg-primary/5 transition-colors"
-                  >
-                    <span className="font-semibold pr-4">{f.q}</span>
-                    <motion.span animate={{ rotate: open ? 180 : 0 }} className="text-primary shrink-0">
-                      <ChevronDown className="w-5 h-5" />
-                    </motion.span>
-                  </button>
-                  <motion.div
-                    initial={false}
-                    animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="overflow-hidden"
-                  >
-                    <p className="px-6 pb-5 text-muted-foreground leading-relaxed">{f.a}</p>
-                  </motion.div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border py-10 mt-10">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} Detailed by Nate. All rights reserved.</p>
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-            <p>Crafted with obsession in the {area}.</p>
-            {/* Required reading for anyone who books, and the terms are what
-                make the cancellation policy stick. */}
-            <Link
-              to="/privacy"
-              className="transition-colors hover:text-foreground"
-            >
-              Privacy
-            </Link>
-            <Link to="/terms" className="transition-colors hover:text-foreground">
-              Terms
-            </Link>
-            {/* Owner's way in. Deliberately quiet — customers have no use for
-                it, and /admin is noindex and server-guarded regardless. */}
-            <Link
-              to="/login"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold transition-colors hover:border-primary/60 hover:text-foreground"
-            >
-              <Lock className="w-3 h-3" /> Staff login
-            </Link>
-          </div>
-        </div>
-      </footer>
-    </div>
+        <SiteFooter phone={phone} email={email} area={area} />
+      </div>
+    </MotionConfig>
   );
 }

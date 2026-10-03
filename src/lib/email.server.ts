@@ -45,6 +45,9 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
   });
   const [h, m] = booking.startTime.split(":").map(Number);
   const time = `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  // What's actually owed: the price less any coupon or season discount.
+  // Emails used to quote the undiscounted price.
+  const due = (booking.totalPrice ?? 0) - (booking.discount ?? 0);
 
   return {
     name: client?.name?.split(" ")[0] ?? "there",
@@ -56,7 +59,7 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
     date,
     time,
     reference: booking.reference,
-    total: `$${(booking.totalPrice ?? 0) + (booking.tip ?? 0)}`,
+    total: `$${due + (booking.tip ?? 0)}`,
     location: booking.location === "mobile" ? `Mobile — ${booking.address}` : "At the shop",
     vehicle: booking.vehicle
       ? `${booking.vehicle.year} ${booking.vehicle.make} ${booking.vehicle.model}`
@@ -71,8 +74,8 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
     deposit: booking.depositAmount ? `$${booking.depositAmount}` : "",
     depositLink: booking.depositPaidAt ? "" : (booking.depositUrl ?? ""),
     balance: booking.depositPaidAt
-      ? `$${Math.max(0, (booking.totalPrice ?? 0) - (booking.depositAmount ?? 0))}`
-      : `$${booking.totalPrice ?? 0}`,
+      ? `$${Math.max(0, due - (booking.depositAmount ?? 0))}`
+      : `$${due}`,
     policy: describePolicy(settings),
   };
 }
