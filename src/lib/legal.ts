@@ -33,7 +33,15 @@ first.
 ## Why we collect it
 
 To do the work you booked, to contact you about that booking, to take
-payment, and to keep accurate business records. That is all.
+payment, and to keep accurate business records.
+
+## Emails from us
+
+By booking with us, you agree to receive occasional emails from {{business}},
+such as seasonal offers, reminders and news about our services. Every one of
+these emails has an unsubscribe link, and you can opt out at any time by
+using it or by emailing {{email}}. Unsubscribing does not affect emails about
+a booking you have made.
 
 ## Who else sees it
 
