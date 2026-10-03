@@ -52,6 +52,9 @@ export const Route = createFileRoute("/")({
       ]);
       return {
         services: catalog.services,
+        ceramicMode: catalog.ceramicMode,
+        coatingPreview: catalog.coatingPreview,
+        ceramicCopy: catalog.ceramicCopy,
         travelFee: catalog.travelFee,
         promo: catalog.promo,
         business: catalog.business,
@@ -63,6 +66,9 @@ export const Route = createFileRoute("/")({
     } catch {
       return {
         services: null,
+        ceramicMode: "hidden" as const,
+        coatingPreview: [],
+        ceramicCopy: null,
         travelFee: 0,
         promo: null,
         business: null,
@@ -202,6 +208,9 @@ function Index() {
   const booking = useBookingModal();
   const {
     services: liveServices,
+    ceramicMode,
+    coatingPreview,
+    ceramicCopy,
     travelFee,
     promo,
     business,
@@ -281,7 +290,22 @@ function Index() {
 
   // Ceramic coating tiers, straight from the catalog so price, time and
   // wording are edited under Services like any package.
-  const coatings = (liveServices ?? []).filter((s) => isCoatingService(s.id));
+  // "Coming soon" shows the tiers without prices or a way to book them.
+  const coatingsOpen = ceramicMode === "open";
+  const coatings: {
+    id: string;
+    title: string;
+    subtitle: string;
+    priceValue?: number;
+    durationMinutes?: number;
+    features: string[];
+    description: string;
+  }[] =
+    ceramicMode === "hidden"
+      ? []
+      : coatingsOpen
+        ? (liveServices ?? []).filter((s) => isCoatingService(s.id))
+        : coatingPreview;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -421,7 +445,7 @@ function Index() {
               {services.map((s) => (
                 <article
                   key={s.id}
-                  className={`site-card group relative isolate flex flex-col rounded-[24px] p-2.5 transition-[transform,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform hover:-translate-y-2 ${
+                  className={`site-card group relative isolate flex flex-col rounded-[24px] p-2.5 site-lift ${
                     s.popular
                       ? "border-[var(--estoril)]/80 shadow-[0_0_0_1px_rgba(47,107,255,0.35),0_30px_90px_-30px_rgba(47,107,255,0.85)]"
                       : "shadow-[0_24px_70px_-34px_rgba(47,107,255,0.55)] hover:border-[var(--sky)]/40"
@@ -432,7 +456,7 @@ function Index() {
                       100px blur on every frame. */}
                   <span
                     aria-hidden
-                    className="pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 shadow-[0_40px_110px_-26px_rgba(47,107,255,0.95)] transition-opacity duration-500 group-hover:opacity-100"
+                    className="pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 shadow-[0_40px_110px_-26px_rgba(47,107,255,0.95)] transition-opacity duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:opacity-100"
                   />
                   {/* Light catching the top edge of the glass. */}
                   <span
@@ -502,21 +526,22 @@ function Index() {
               <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-end">
                 <div>
                   <span className="inline-flex items-center rounded-full bg-[var(--estoril)]/15 px-3 py-1 text-[13px] font-bold text-[var(--sky)] ring-1 ring-inset ring-[var(--estoril)]/40">
-                    New for {promo?.enabled ? promo.seasonLabel : "2027"}
+                    {coatingsOpen
+                      ? `New for ${promo?.enabled ? promo.seasonLabel : "2027"}`
+                      : "Coming soon"}
                   </span>
                   <h2 className="mt-4 text-[clamp(2.2rem,4.6vw,3.75rem)] leading-[1]">Ceramic coating</h2>
-                  <p className="mt-5 max-w-[50ch] leading-relaxed text-[var(--text-muted)]">
-                    A hard, glossy layer that bonds to your paint and protects it for years. Water and
-                    dirt slide off, washes take half the time, and the shine lasts long after wax
-                    would be gone.
-                  </p>
+                  {ceramicCopy?.intro && (
+                    <p className="mt-5 max-w-[50ch] leading-relaxed text-[var(--text-muted)]">
+                      {ceramicCopy.intro}
+                    </p>
+                  )}
                 </div>
                 <ul className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    { icon: ShieldCheck, text: "Protection that lasts years, not weeks" },
-                    { icon: Droplets, text: "Water beads and rolls straight off" },
-                    { icon: Snowflake, text: "Stands up to road salt and winter grime" },
-                  ].map(({ icon: Icon, text }) => (
+                  {[ShieldCheck, Droplets, Snowflake]
+                    .map((icon, i) => ({ icon, text: ceramicCopy?.points?.[i]?.trim() ?? "" }))
+                    .filter((p) => p.text)
+                    .map(({ icon: Icon, text }) => (
                     <li key={text} className="site-glass rounded-[18px] p-5">
                       <Icon aria-hidden className="h-5 w-5 text-[var(--sky)]" />
                       <p className="mt-3 text-[15px] leading-snug">{text}</p>
@@ -526,39 +551,46 @@ function Index() {
               </div>
 
               <div className="mt-14 grid gap-5 md:grid-cols-3">
-                {coatings.map((c) => {
+                {coatings.map((c, i) => {
                   const featured = c.id === "ceramic-3yr";
+                  // Rising metals by protection: platinum, sapphire, gold.
+                  const tier = (["platinum", "sapphire", "gold"] as const)[Math.min(i, 2)]!;
                   const duration = formatDuration(c.durationMinutes);
                   return (
                     <article
                       key={c.id}
-                      className={`site-card group relative isolate flex flex-col rounded-[24px] p-7 transition-[transform,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform hover:-translate-y-2 ${
-                        featured
-                          ? "border-[var(--estoril)]/80 shadow-[0_0_0_1px_rgba(47,107,255,0.35),0_30px_90px_-30px_rgba(47,107,255,0.85)]"
-                          : "shadow-[0_24px_70px_-34px_rgba(47,107,255,0.55)] hover:border-[var(--sky)]/40"
+                      className={`site-card-premium tier-${tier} group relative isolate flex flex-col rounded-[24px] p-7 site-lift ${
+                        featured ? "site-card-premium-featured" : ""
                       }`}
                     >
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 shadow-[0_40px_110px_-26px_rgba(47,107,255,0.95)] transition-opacity duration-500 group-hover:opacity-100"
+                        className="tier-glow pointer-events-none absolute inset-0 -z-10 rounded-[24px] opacity-0 transition-opacity duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:opacity-100"
                       />
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-[var(--sky)] to-transparent opacity-70"
+                        className="tier-line pointer-events-none absolute inset-x-8 top-0 h-px opacity-80"
                       />
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-[14px] text-[var(--sky)]">{c.subtitle}</p>
+                        <p className="tier-name text-[13px] font-bold capitalize tracking-wide">{tier}</p>
                         {featured && (
-                          <span className="rounded-full bg-[var(--estoril)] px-2.5 py-0.5 text-[12px] font-bold text-white">
+                          <span className="tier-chip rounded-full px-2.5 py-0.5 text-[12px] font-bold">
                             Most popular
                           </span>
                         )}
                       </div>
+                      <p className="tier-text mt-3 text-[14px]">{c.subtitle}</p>
                       <h3 className="mt-1.5 text-[28px] leading-none">{c.title}</h3>
-                      <p className="site-display tnum mt-6 text-[46px] leading-none">${c.priceValue}</p>
-                      <p className="mt-2 text-[14px] text-[var(--text-muted)]">
-                        Starting price{duration ? ` · about ${duration}` : ""}
-                      </p>
+                      {coatingsOpen ? (
+                        <>
+                          <p className="site-display tnum mt-6 text-[46px] leading-none">${c.priceValue}</p>
+                          <p className="mt-2 text-[14px] text-[var(--text-muted)]">
+                            Starting price{duration ? ` · about ${duration}` : ""}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="mt-6 text-[15px] text-[var(--text-muted)]">Pricing coming soon</p>
+                      )}
                       {c.description && (
                         <p className="mt-5 text-[15.5px] leading-relaxed text-[var(--text-muted)]">
                           {c.description}
@@ -568,22 +600,28 @@ function Index() {
                         <ul className="mt-5 space-y-2.5 border-t border-white/10 pt-5 text-[15px]">
                           {c.features.map((f) => (
                             <li key={f} className="flex gap-2.5">
-                              <Check aria-hidden className="mt-[3px] h-4 w-4 shrink-0 text-[var(--sky)]" />
+                              <Check aria-hidden className="tier-text mt-[3px] h-4 w-4 shrink-0" />
                               {f}
                             </li>
                           ))}
                         </ul>
                       )}
                       <div className="mt-auto pt-8">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            booking.open(c.id as ServiceId, { season: Boolean(promo?.enabled) })
-                          }
-                          className={`${featured ? "site-btn" : "site-btn-quiet"} w-full`}
-                        >
-                          {promo?.enabled ? `Reserve ${c.title}` : `Book ${c.title}`}
-                        </button>
+                        {coatingsOpen ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              booking.open(c.id as ServiceId, { season: Boolean(promo?.enabled) })
+                            }
+                            className={`${featured ? "site-btn" : "site-btn-quiet"} w-full`}
+                          >
+                            {promo?.enabled ? `Reserve ${c.title}` : `Book ${c.title}`}
+                          </button>
+                        ) : (
+                          <p className="rounded-full border border-white/10 py-3 text-center text-[15px] text-[var(--text-muted)]">
+                            Reservations open soon
+                          </p>
+                        )}
                       </div>
                     </article>
                   );
@@ -591,9 +629,8 @@ function Index() {
               </div>
 
               <p className="mt-8 max-w-[80ch] text-[14px] leading-relaxed text-[var(--text-muted)]">
-                A coating needs time to set before the car goes back out, so plan to leave it with me
-                for the day. Keep it dry for 24 hours and skip washes for the first week.
-                {promo?.enabled &&
+                {ceramicCopy?.note}
+                {coatingsOpen && promo?.enabled &&
                   ` Reserve for the ${promo.seasonLabel} and get ${promo.percent}% off automatically.`}
               </p>
             </Container>

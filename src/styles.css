@@ -702,6 +702,96 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   }
 
+  /* Ceramic coating cards. Each tier has its own metal, rising with the
+     protection: platinum (1 year), sapphire (3 years), gold (5 years).
+     --tier is the accent as an RGB triplet; --tier-bg-a/b tint the fill. */
+  .site-card-premium {
+    --tier: 120 160 255;
+    --tier-bg-a: #101a3a;
+    --tier-bg-b: #0c1229;
+    background:
+      radial-gradient(120% 70% at 50% 0%, rgb(var(--tier) / 0.3), transparent 60%),
+      linear-gradient(180deg, var(--tier-bg-a) 0%, var(--tier-bg-b) 55%, #0a0b10 100%);
+    border: 1px solid rgb(var(--tier) / 0.3);
+    box-shadow:
+      inset 0 1px 0 rgb(var(--tier) / 0.3),
+      0 30px 80px -34px rgb(var(--tier) / 0.6);
+  }
+  .site-card-premium:hover {
+    border-color: rgb(var(--tier) / 0.6);
+  }
+  .tier-platinum {
+    --tier: 200 212 230;
+    --tier-bg-a: #1a1f29;
+    --tier-bg-b: #111419;
+  }
+  .tier-sapphire {
+    --tier: 96 145 255;
+    --tier-bg-a: #101a3a;
+    --tier-bg-b: #0c1229;
+  }
+  .tier-gold {
+    --tier: 228 186 108;
+    --tier-bg-a: #2a2112;
+    --tier-bg-b: #17130c;
+  }
+  .site-card-premium-featured {
+    border-color: rgb(var(--tier) / 0.7);
+    box-shadow:
+      inset 0 1px 0 rgb(var(--tier) / 0.45),
+      0 0 0 1px rgb(var(--tier) / 0.35),
+      0 34px 100px -30px rgb(var(--tier) / 0.9);
+  }
+  /* Tier-coloured pieces inside a coating card. */
+  .tier-text {
+    color: rgb(var(--tier));
+  }
+  .tier-line {
+    background: linear-gradient(90deg, transparent, rgb(var(--tier)), transparent);
+  }
+  .tier-glow {
+    box-shadow: 0 40px 110px -26px rgb(var(--tier) / 0.85);
+  }
+  .tier-chip {
+    background: rgb(var(--tier) / 0.16);
+    color: rgb(var(--tier));
+    box-shadow: inset 0 0 0 1px rgb(var(--tier) / 0.4);
+  }
+  /* The metal name over the title, set in the tier colour with a soft sheen. */
+  .tier-name {
+    background: linear-gradient(100deg, rgb(var(--tier)), rgb(255 255 255 / 0.95) 50%, rgb(var(--tier)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Hover lift for package and coating cards: one long, soft ease both ways,
+     on the GPU. The strip below keeps the hover alive once the card has
+     risen away from the cursor, so it never flickers at the bottom edge. */
+  .site-lift {
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    transition:
+      transform 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.5s ease;
+    will-change: transform;
+  }
+  .site-lift:hover {
+    transform: translate3d(0, -6px, 0);
+  }
+  .site-lift::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -8px;
+    height: 8px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .site-lift,
+    .site-lift:hover {
+      transform: none;
+    }
+  }
+
   /* Faint, still blue light behind a section, for the glass to catch. */
   .site-glow {
     position: relative;

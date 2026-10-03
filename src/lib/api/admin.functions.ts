@@ -1894,3 +1894,35 @@ export const saveAvailability = createServerFn({ method: "POST" })
       settings: await updateSettings({ onlyInRanges: data.onlyInRanges, availabilityRanges: ranges }),
     };
   });
+
+/** Ceramic coating on the public site: hidden, coming soon, or bookable. */
+export const saveCeramicMode = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ ceramicMode: z.enum(["hidden", "soon", "open"]) }))
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    const settings = await updateSettings({ ceramicMode: data.ceramicMode });
+    return { ceramicMode: settings.ceramicMode };
+  });
+
+/** Wording of the ceramic section: intro, the three highlights, the note. */
+export const saveCeramicCopy = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      ceramicIntro: z.string().max(600),
+      ceramicPoints: z.array(z.string().max(80)).max(3),
+      ceramicNote: z.string().max(600),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { updateSettings } = await import("../db.server");
+    const { requireUser } = await import("../auth.server");
+    await requireUser();
+    const s = await updateSettings({
+      ceramicIntro: data.ceramicIntro.trim(),
+      ceramicPoints: data.ceramicPoints.map((p) => p.trim()),
+      ceramicNote: data.ceramicNote.trim(),
+    });
+    return { ceramicIntro: s.ceramicIntro, ceramicPoints: s.ceramicPoints, ceramicNote: s.ceramicNote };
+  });

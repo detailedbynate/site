@@ -344,6 +344,16 @@ export interface Settings {
   /** Email the team whenever a detail is booked. */
   teamNotifyEnabled: boolean;
   teamNotifyEmails: string[];
+  /**
+   * Ceramic coating on the public site: "hidden" (not mentioned), "soon"
+   * (shown as coming soon, no prices, can't be booked) or "open" (priced and
+   * bookable). Set under Admin -> Services.
+   */
+  ceramicMode: "hidden" | "soon" | "open";
+  /** Wording of the ceramic section on the homepage (Admin -> Services). */
+  ceramicIntro: string;
+  ceramicPoints: string[];
+  ceramicNote: string;
 
   // --- Next-season reservations (see lib/promo.ts) ---
   /** Dates inside the season can be booked now, at a discount. */
@@ -695,6 +705,10 @@ Notes: {{notes}}`,
   emailReplyTo: "",
   teamNotifyEnabled: false,
   teamNotifyEmails: [] as string[],
+  ceramicMode: "soon" as "hidden" | "soon" | "open",
+  ceramicIntro: "A hard, glossy layer that bonds to your paint and protects it for years. Water and dirt slide off, washes take half the time, and the shine lasts long after wax would be gone.",
+  ceramicPoints: ["Protection that lasts years, not weeks","Water beads and rolls straight off","Stands up to road salt and winter grime"] as string[],
+  ceramicNote: "A coating needs time to set before the car goes back out, so plan to leave it with me for the day. Keep it dry for 24 hours and skip washes for the first week.",
   availabilityRanges: [] as AvailabilityRange[],
   onlyInRanges: false,
   promoEnabled: true,

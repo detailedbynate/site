@@ -27,9 +27,32 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     listFormFields(),
   ]);
 
+  // Coatings are only in the bookable catalog once they're open. While
+  // "coming soon" the homepage gets their names and wording, never prices.
+  const ceramicMode = settings.ceramicMode ?? "soon";
+  const coatingPreview =
+    ceramicMode === "soon"
+      ? services
+          .filter((s) => s.active && isCoatingService(s.id))
+          .map(({ id, title, subtitle, features, description }) => ({
+            id,
+            title,
+            subtitle,
+            features: features ?? [],
+            description: description ?? "",
+          }))
+      : [];
+
   return {
+    ceramicMode,
+    coatingPreview,
+    ceramicCopy: {
+      intro: settings.ceramicIntro ?? "",
+      points: settings.ceramicPoints ?? [],
+      note: settings.ceramicNote ?? "",
+    },
     services: services
-      .filter((s) => s.active)
+      .filter((s) => s.active && (ceramicMode === "open" || !isCoatingService(s.id)))
       .map(({ id, title, subtitle, priceValue, durationMinutes, features, description }) => ({
         id,
         title,
@@ -308,6 +331,10 @@ export const createBooking = createServerFn({ method: "POST" })
     const promo = promoFromSettings(await promoSettings());
     const seasonOff = isSeasonDate(promo, data.date) ? seasonDiscount(promo, totalPrice) : 0;
 
+    if (isCoatingService(service.id) && (await promoSettings()).ceramicMode !== "open") {
+      throw new Error("Ceramic coating isn't open for booking yet.");
+    }
+
     // Ceramic coating is new for the promoted season — while reservations
     // run, it can't be booked for a date outside it.
     if (promo.enabled && isCoatingService(service.id) && !isSeasonDate(promo, data.date)) {
@@ -500,6 +527,8 @@ export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () =>
     analyticsSiteId: s.analyticsSiteId,
     // The announcement bar on every public page reads this.
     promo: promoFromSettings(s),
+    // The nav and footer drop their ceramic links when it's hidden.
+    ceramicMode: s.ceramicMode ?? "soon",
   };
 });
 

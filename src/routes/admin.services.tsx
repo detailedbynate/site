@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ImageIcon, Truck, Upload } from "lucide-react";
+import { ImageIcon, Sparkles, Truck, Upload } from "lucide-react";
 
 import {
   getAdminSettings,
   removeService,
   saveService,
+  saveCeramicCopy,
+  saveCeramicMode,
   saveTravelFee,
 } from "@/lib/api/admin.functions";
 import { CatalogEditor } from "@/components/admin/CatalogEditor";
@@ -29,6 +31,7 @@ function Services() {
         subtitle="Your packages. Edits here change the booking form immediately — price and duration are re-read on every booking."
       />
       <MobileFeeCard />
+      <CeramicModeCard />
       <PackagePhotosCard />
       <CatalogEditor
         kind="service"
@@ -279,6 +282,171 @@ function PackagePhoto({
           e.target.value = "";
         }}
       />
+    </div>
+  );
+}
+
+type CeramicMode = "hidden" | "soon" | "open";
+
+const CERAMIC_OPTIONS: { id: CeramicMode; label: string; hint: string }[] = [
+  { id: "hidden", label: "Hidden", hint: "Not shown anywhere on the site." },
+  { id: "soon", label: "Coming soon", hint: "Shown on the homepage without prices. Can't be booked." },
+  { id: "open", label: "Open for reservations", hint: "Prices shown, and customers can book it." },
+];
+
+/** Whether ceramic coating is hidden, teased as coming soon, or bookable. */
+function CeramicModeCard() {
+  const [mode, setMode] = useState<CeramicMode | null>(null);
+  const [busy, setBusy] = useState<CeramicMode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAdminSettings()
+      .then((r) => setMode(r.settings.ceramicMode ?? "soon"))
+      .catch(() => undefined);
+  }, []);
+
+  if (!mode) return null;
+
+  const pick = async (next: CeramicMode) => {
+    if (next === mode) return;
+    setBusy(next);
+    setError(null);
+    try {
+      setMode((await saveCeramicMode({ data: { ceramicMode: next } })).ceramicMode);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <GlassCard index={1} className="mb-5 p-6">
+      <div className="flex items-center gap-2.5">
+        <Sparkles className="h-4 w-4 text-primary" />
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">
+          Ceramic coating on the site
+        </p>
+      </div>
+      <p className="mt-1 text-[12.5px] text-muted-foreground">
+        Prices and wording for each coating are edited in the package list below.
+      </p>
+      <div
+        className="mt-4 grid gap-2 sm:grid-cols-3"
+        role="radiogroup"
+        aria-label="Ceramic coating on the site"
+      >
+        {CERAMIC_OPTIONS.map((o) => {
+          const active = mode === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={busy !== null}
+              onClick={() => void pick(o.id)}
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                active
+                  ? "border-primary bg-primary/10"
+                  : "border-[var(--line-2)] bg-[var(--fill-1)] hover:border-primary/40"
+              }`}
+            >
+              <p className="text-[13.5px] font-semibold text-foreground">
+                {o.label}
+                {busy === o.id && " …"}
+              </p>
+              <p className="mt-1 text-[12px] leading-snug text-muted-foreground">{o.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-3 text-[12.5px] text-red-400">{error}</p>}
+      <CeramicCopyEditor />
+    </GlassCard>
+  );
+}
+
+/** The ceramic section's intro, three highlights and closing note. */
+function CeramicCopyEditor() {
+  const [intro, setIntro] = useState<string | null>(null);
+  const [points, setPoints] = useState<string[]>(["", "", ""]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    getAdminSettings()
+      .then(({ settings: s }) => {
+        setIntro(s.ceramicIntro ?? "");
+        setPoints([0, 1, 2].map((i) => s.ceramicPoints?.[i] ?? ""));
+        setNote(s.ceramicNote ?? "");
+      })
+      .catch(() => undefined);
+  }, []);
+
+  if (intro === null) return null;
+
+  const save = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await saveCeramicCopy({ data: { ceramicIntro: intro, ceramicPoints: points, ceramicNote: note } });
+      setMsg({ ok: true, text: "Saved. The homepage shows it now." });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't save." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-[var(--line-2)] pt-5">
+      <p className="text-[13.5px] font-semibold text-foreground">Section wording</p>
+      <p className="mt-1 text-[12px] text-muted-foreground">
+        Each coating's own name, price and description are edited in the package list below.
+      </p>
+      <label className="mt-4 block text-[12px] font-medium text-muted-foreground">
+        Intro
+        <textarea
+          className={`${inputCls} mt-1.5 min-h-[88px]`}
+          value={intro}
+          maxLength={600}
+          onChange={(e) => setIntro(e.target.value)}
+        />
+      </label>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        {points.map((p, i) => (
+          <label key={i} className="block text-[12px] font-medium text-muted-foreground">
+            Highlight {i + 1}
+            <input
+              className={`${inputCls} mt-1.5`}
+              value={p}
+              maxLength={80}
+              placeholder="Leave blank to hide"
+              onChange={(e) => setPoints(points.map((x, j) => (j === i ? e.target.value : x)))}
+            />
+          </label>
+        ))}
+      </div>
+      <label className="mt-3 block text-[12px] font-medium text-muted-foreground">
+        Note under the coatings
+        <textarea
+          className={`${inputCls} mt-1.5 min-h-[72px]`}
+          value={note}
+          maxLength={600}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button variant="primary" loading={busy} onClick={save}>
+          Save wording
+        </Button>
+        {msg && (
+          <p className={`text-[12.5px] ${msg.ok ? "text-emerald-400" : "text-red-400"}`}>{msg.text}</p>
+        )}
+      </div>
     </div>
   );
 }

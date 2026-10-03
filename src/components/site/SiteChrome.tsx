@@ -24,14 +24,17 @@ export function Container({
 }
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
+  const ceramicHidden = useLoaderData({ from: "__root__" })?.meta?.ceramicMode === "hidden";
   return (
     <>
       <Link to="/" hash="packages" onClick={onNavigate} className="site-navlink">
         Packages
       </Link>
-      <Link to="/" hash="ceramic" onClick={onNavigate} className="site-navlink">
-        Ceramic
-      </Link>
+      {!ceramicHidden && (
+        <Link to="/" hash="ceramic" onClick={onNavigate} className="site-navlink">
+          Ceramic
+        </Link>
+      )}
       <Link to="/" hash="process" onClick={onNavigate} className="site-navlink">
         How it works
       </Link>
@@ -173,6 +176,7 @@ export function SiteFooter({
 }) {
   const booking = useBookingModal();
   const link = "transition-colors hover:text-white";
+  const ceramicHidden = useLoaderData({ from: "__root__" })?.meta?.ceramicMode === "hidden";
   return (
     <footer className="border-t border-[var(--line)]">
       <Container className="grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr]">
@@ -195,9 +199,11 @@ export function SiteFooter({
             <li>
               <Link to="/" hash="packages" className={link}>Packages</Link>
             </li>
-            <li>
-              <Link to="/" hash="ceramic" className={link}>Ceramic coating</Link>
-            </li>
+            {!ceramicHidden && (
+              <li>
+                <Link to="/" hash="ceramic" className={link}>Ceramic coating</Link>
+              </li>
+            )}
             <li>
               <Link to="/" hash="process" className={link}>How it works</Link>
             </li>
