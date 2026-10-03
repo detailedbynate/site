@@ -294,7 +294,7 @@ export function BookingWizard({
     location === "mobile"
       ? `Mobile · ${address || "address pending"} (+$${travelFee})`
       : location === "shop"
-        ? "At the shop"
+        ? "Drop-off"
         : "—";
 
   // Changing the package or add-ons changes how long the job takes, which can
@@ -314,7 +314,7 @@ export function BookingWizard({
   const stepError = (): string | null => {
     if (step === 0 && !service) return "Choose a service package.";
     if (step === 2) {
-      if (!location) return "Pick mobile or in-shop service.";
+      if (!location) return "Pick mobile or drop-off.";
       if (location === "mobile" && address.trim().length < 5) return "Enter your service address.";
     }
     if (step === 3 && (!date || !time)) return "Select a date and a time slot.";
@@ -705,13 +705,13 @@ export function BookingWizard({
                         icon: Truck,
                         title: "Mobile — I come to you",
                         text: shopOnly
-                          ? "Ceramic coating is done at the shop only."
+                          ? "Ceramic coating is drop-off only."
                           : `I come to your home or work. +${travelFee} travel.`,
                       },
                       {
                         id: "shop" as const,
                         icon: Home,
-                        title: "At the shop",
+                        title: "Drop-off",
                         text: "Drop it off and I'll handle the rest.",
                       },
                     ] as const

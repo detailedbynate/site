@@ -54,9 +54,10 @@ async function staticSeoResponse(request: Request): Promise<Response | null> {
 
   const { getSettings } = await import("./lib/db.server");
   const settings = await getSettings().catch(() => null);
-  // Fall back to the requesting origin so this still works before a Site URL
-  // is configured, and behind Railway's proxy.
-  const origin = (settings?.siteUrl || url.origin).replace(/\/+$/, "");
+  // Always https on the real domain. The requesting origin is plain http
+  // behind Railway's proxy, which is how http:// URLs ended up in here.
+  const { siteOrigin } = await import("./lib/site-url");
+  const origin = siteOrigin(settings?.siteUrl);
 
   if (url.pathname === "/robots.txt") {
     const body = [
@@ -79,6 +80,9 @@ async function staticSeoResponse(request: Request): Promise<Response | null> {
   const pages: [path: string, priority: string][] = [
     ["/", "1.0"],
     ["/book", "0.9"],
+    ["/prices", "0.8"],
+    ["/mobile-detailing", "0.8"],
+    ["/interior-detailing", "0.8"],
     ["/results", "0.7"],
   ];
   const rows = pages.map(

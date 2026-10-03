@@ -91,7 +91,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       m?.description ||
       "Premium mobile auto detailing by Nate. Hand-washed, ceramic-coated, showroom-perfect. Book now.";
     const image = m?.ogImageUrl || "";
-    const url = m?.siteUrl || "";
 
     return {
     meta: [
@@ -104,7 +103,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: title },
       { property: "og:description", content: description },
       { property: "og:type", content: "website" },
-      ...(url ? [{ property: "og:url", content: url }] : []),
+      // og:url and the canonical link are set per page (each route's head),
+      // so /book never claims to be the homepage.
       ...(image ? [{ property: "og:image", content: image }] : []),
       { name: "twitter:card", content: image ? "summary_large_image" : "summary" },
       ...(m?.twitterHandle ? [{ name: "twitter:site", content: m.twitterHandle }] : []),
@@ -140,7 +140,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
             { rel: "apple-touch-icon", href: m.faviconUrl },
           ]
         : []),
-      ...(url ? [{ rel: "canonical", href: url }] : []),
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       // Satoshi — the public site's typeface (Fontshare, not Google Fonts).

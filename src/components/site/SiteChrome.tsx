@@ -90,7 +90,7 @@ export function SiteNav({ phone }: { phone?: string | null }) {
       <div className="mx-auto max-w-[1240px] rounded-[18px] border border-white/10 bg-[#0a0a0c]/55 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between gap-3 px-4 sm:gap-6 sm:px-6">
           <Link to="/" className="site-wordmark flex items-center gap-2 whitespace-nowrap text-[17px] sm:text-[18px]">
-            <img src={logo} alt="Nate Auto Detailing" className="h-7 w-auto sm:h-8" />
+            <img src={logo} alt="Detailed by Nate" className="h-7 w-auto sm:h-8" />
           </Link>
 
           <nav aria-label="Main" className="hidden items-center gap-8 lg:flex">
@@ -182,11 +182,14 @@ export function SiteFooter({
       <Container className="grid gap-12 py-16 md:grid-cols-[1.5fr_1fr_1fr]">
         <div>
           <p className="site-wordmark flex items-center gap-2 text-[20px]">
-            <img src={logo} alt="Nate Auto Detailing" className="h-7 w-auto sm:h-8" />
+            <img src={logo} alt="Detailed by Nate" className="h-7 w-auto sm:h-8" />
           </p>
           <p className="mt-4 max-w-[36ch] leading-relaxed text-[var(--text-muted)]">
-            Mobile and in-studio car detailing{area ? ` in the ${area}` : ""}. Booked online, done
-            by hand.
+            Mobile and drop-off{" "}
+            <Link to="/" className="underline decoration-white/25 underline-offset-4 hover:text-white">
+              car detailing in the {area || "Sault Ste. Marie area"}
+            </Link>
+            . Booked online, done by hand.
           </p>
           <button type="button" onClick={() => booking.open()} className="site-btn site-btn-sm mt-7">
             Book now
@@ -195,10 +198,23 @@ export function SiteFooter({
 
         <div>
           <p className="site-label text-[var(--text)]">Explore</p>
-          <ul className="mt-5 space-y-3 text-[15px] text-[var(--text-muted)]">
+          {/* Two short columns instead of one long one. */}
+          <div className="mt-5 grid grid-cols-2 gap-x-10">
+          <ul className="space-y-3 text-[15px] text-[var(--text-muted)]">
             <li>
               <Link to="/" hash="packages" className={link}>Packages</Link>
             </li>
+            <li>
+              <Link to="/prices" className={link}>Prices</Link>
+            </li>
+            <li>
+              <Link to="/mobile-detailing" className={link}>Mobile detailing</Link>
+            </li>
+            <li>
+              <Link to="/interior-detailing" className={link}>Interior detailing</Link>
+            </li>
+          </ul>
+          <ul className="space-y-3 text-[15px] text-[var(--text-muted)]">
             {!ceramicHidden && (
               <li>
                 <Link to="/" hash="ceramic" className={link}>Ceramic coating</Link>
@@ -217,6 +233,7 @@ export function SiteFooter({
               <Link to="/" hash="faq" className={link}>FAQ</Link>
             </li>
           </ul>
+          </div>
         </div>
 
         <div>
@@ -232,7 +249,7 @@ export function SiteFooter({
                 <a href={`mailto:${email}`} className={`${link} break-all`}>{email}</a>
               </li>
             )}
-            {area && <li>{area}</li>}
+            <li>Sault Ste. Marie, Ontario</li>
             <li>
               <Link to="/book" className={link}>Book online</Link>
             </li>
@@ -260,10 +277,14 @@ export function BookingBand({
   phone,
   email,
   area,
+  title = "Ready to look brand new?",
+  text = "Book a slot in under 60 seconds. I'll confirm the same day.",
 }: {
   phone?: string | null;
   email?: string | null;
   area?: string | null;
+  title?: string;
+  text?: string;
 }) {
   const booking = useBookingModal();
   return (
@@ -282,10 +303,8 @@ export function BookingBand({
       <Container className="py-24 md:py-32">
         <div className="site-glass max-w-[640px] rounded-[26px] p-8 md:p-12">
           <p className="site-label text-[var(--sky)]">Book online</p>
-          <h2 className="mt-3 text-[clamp(2.3rem,5vw,3.9rem)] leading-[1]">Ready to look brand new?</h2>
-          <p className="mt-5 max-w-[44ch] text-[18px] leading-relaxed text-white/75">
-            Book a slot in under 60 seconds. I'll confirm the same day.
-          </p>
+          <h2 className="mt-3 text-[clamp(2.3rem,5vw,3.9rem)] leading-[1]">{title}</h2>
+          <p className="mt-5 max-w-[44ch] text-[18px] leading-relaxed text-white/75">{text}</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <button type="button" onClick={() => booking.open()} className="site-btn">
               Book your detail

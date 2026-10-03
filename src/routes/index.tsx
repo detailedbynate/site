@@ -7,7 +7,7 @@ import {
   useMotionValue,
   useTransform,
 } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Droplets, Phone, Plus, ShieldCheck, Snowflake } from "lucide-react";
 
 import heroCar from "@/assets/hero-car.jpg";
@@ -24,7 +24,7 @@ import {
   SiteNav,
   Stars,
 } from "@/components/site/SiteChrome";
-import { getCatalog, getPublicGallery } from "@/lib/api/booking.functions";
+import { getCatalog, getHomeSchema, getPublicGallery } from "@/lib/api/booking.functions";
 import {
   getHeroImage,
   getPublicFaqs,
@@ -43,12 +43,13 @@ export const Route = createFileRoute("/")({
   // number and nothing for a crawler to read wrong.
   loader: async () => {
     try {
-      const [catalog, gallery, reviews, faq, hero] = await Promise.all([
+      const [catalog, gallery, reviews, faq, hero, schema] = await Promise.all([
         getCatalog(),
         getPublicGallery(),
         getPublicTestimonials(),
         getPublicFaqs(),
         getHeroImage(),
+        getHomeSchema().catch(() => null),
       ]);
       return {
         services: catalog.services,
@@ -62,6 +63,7 @@ export const Route = createFileRoute("/")({
         reviews: reviews.testimonials,
         faqs: faq.faqs,
         hero,
+        schema,
       };
     } catch {
       return {
@@ -76,8 +78,21 @@ export const Route = createFileRoute("/")({
         reviews: [],
         faqs: [],
         hero: null,
+        schema: null,
       };
     }
+  },
+  // Title and description come from the root (Admin → SEO). This adds the
+  // page's own canonical URL and its structured data.
+  head: ({ loaderData }) => {
+    const origin = loaderData?.schema?.origin ?? "https://detailedbynate.com";
+    return {
+      meta: [{ property: "og:url", content: `${origin}/` }],
+      links: [{ rel: "canonical", href: `${origin}/` }],
+      scripts: loaderData?.schema
+        ? [{ type: "application/ld+json", children: loaderData.schema.json }]
+        : [],
+    };
   },
   component: Index,
 });
@@ -87,10 +102,19 @@ function Counter({ to, suffix = "" }: { to: number; suffix?: string }) {
   const inView = useInView(ref, { once: true, margin: "-50px" });
   const count = useMotionValue(0);
   const rounded = useTransform(count, (v) => Math.floor(v).toLocaleString());
-  const [display, setDisplay] = useState("0");
+  // Server HTML carries the real number, which is what crawlers read. The
+  // browser resets to 0 and counts up while the stats bar is still hidden.
+  const [display, setDisplay] = useState(() => to.toLocaleString());
+  const started = useRef(false);
+
+  useLayoutEffect(() => {
+    if (started.current) return;
+    setDisplay("0");
+  }, []);
 
   useEffect(() => {
     if (!inView) return;
+    started.current = true;
     const controls = animate(count, to, { duration: 2.2, ease: [0.16, 1, 0.3, 1] });
     const unsub = rounded.on("change", setDisplay);
     return () => { controls.stop(); unsub(); };
@@ -143,7 +167,7 @@ const steps = [
   { title: "Pick a time", text: "Open slots are live, so booking takes about a minute." },
   {
     title: "Drop off or stay home",
-    text: "Bring it to the studio, or I come to your home or work.",
+    text: "Drop it off with me, or I come to your home or work.",
   },
   {
     title: "Drive away showroom-ready",
@@ -223,16 +247,18 @@ function Index() {
   // Hero copy and the counters are editable in SEO & branding. The literals
   // here are only a fallback for a fresh install.
   const heroUrl = hero?.url ?? null;
-  const heroHeadline = hero?.headline || "Make your car";
-  const heroAccent = hero?.headlineAccent || "look untouchable.";
+  // The city name never breaks across lines in the big headline.
+  const keepCity = (t: string) => t.replace(/Sault Ste\. Marie/g, "Sault Ste. Marie");
+  const heroHeadline = keepCity(hero?.headline || "Make your car");
+  const heroAccent = keepCity(hero?.headlineAccent || "look untouchable.");
   const heroSubtext =
     hero?.subtext ||
-    "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.";
+    "Hand car detailing in Sault Ste. Marie, inside and out. Drop it off with me, or I come to you.";
   // The badge and pills are also editable, and blank is meaningful there:
   // it hides that piece. So a stored "" wins; the literals are only for when
   // the hero failed to load at all.
   const heroBadge = hero ? hero.badge : "Now booking — Summer detail season";
-  const heroPill = hero ? hero.pill : "No deposit required · Mobile & in-studio";
+  const heroPill = hero ? hero.pill : "No deposit · Mobile or drop-off · Sault Ste. Marie";
   const statPills = [
     {
       value: hero?.statClients ?? 150,
@@ -252,6 +278,7 @@ function Index() {
   const faqs = liveFaqs?.length ? liveFaqs : fallbackFaqs;
   const reviews = liveReviews?.length ? liveReviews : fallbackReviews;
   const ratings = reviews.map((r) => r.rating);
+  const reviewTotal = hero?.reviewTotal ?? 15;
   const average = ratings.length ? ratings.reduce((s, n) => s + n, 0) / ratings.length : 5;
 
   // Only the shop's own uploaded work (Admin -> SEO & branding). The whole
@@ -336,8 +363,7 @@ function Index() {
           ) : (
             <motion.img
               src={heroUrl ?? heroCar}
-              alt=""
-              aria-hidden
+              alt="Car detailing in Sault Ste. Marie by Detailed by Nate"
               initial={{ scale: 1.06 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.8, ease: "easeOut" }}
@@ -363,10 +389,16 @@ function Index() {
                 {heroBadge}
               </motion.p>
             )}
-            <h1 className="mt-6 max-w-[14ch] text-[clamp(2.9rem,7vw,6.25rem)] leading-[0.98]">
+            <h1
+              className={`mt-6 leading-[0.98] ${
+                (heroHeadline + heroAccent).length > 34
+                  ? "max-w-[18ch] text-[clamp(2.5rem,5.4vw,4.9rem)]"
+                  : "max-w-[14ch] text-[clamp(2.9rem,7vw,6.25rem)]"
+              }`}
+            >
               <motion.span {...rise(0.06)} className="block">
                 {heroHeadline}
-              </motion.span>
+              </motion.span>{" "}
               <motion.span {...rise(0.14)} className="block">
                 {heroAccent}
               </motion.span>
@@ -433,7 +465,7 @@ function Index() {
           />
           <Container className="py-24 md:py-32">
             <div className="flex flex-wrap items-end justify-between gap-6">
-              <SectionHeading label="Packages" title="Choose your detail" />
+              <SectionHeading label="Packages" title="Which detailing package do I need?" />
               <p className="max-w-[44ch] leading-relaxed text-[var(--text-muted)]">
                 Every package is done by hand.
                 {travelFee > 0 && ` Mobile service adds $${travelFee} for travel.`} Add-ons are
@@ -473,8 +505,7 @@ function Index() {
                   <div className="relative aspect-[16/10] overflow-hidden rounded-[17px]">
                     <img
                       src={s.image}
-                      alt=""
-                      aria-hidden
+                      alt={`${s.title} detailing package: ${s.subtitle}`}
                       loading="lazy"
                       className="h-full w-full object-cover transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform group-hover:scale-[1.05]"
                     />
@@ -514,6 +545,23 @@ function Index() {
                 </article>
               ))}
             </div>
+
+            <p className="mt-10 max-w-[80ch] text-[15px] leading-relaxed text-[var(--text-muted)]">
+              If the inside took the beating, book Gold. If it's mostly the outside, book Silver,
+              and if it's both, which it usually is after winter, book Diamond. See all{" "}
+              <Link to="/prices" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                car detailing prices
+              </Link>
+              , or read about{" "}
+              <Link to="/mobile-detailing" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                mobile car detailing
+              </Link>{" "}
+              and{" "}
+              <Link to="/interior-detailing" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                interior car detailing
+              </Link>
+              .
+            </p>
           </Container>
         </section>
 
@@ -687,7 +735,7 @@ function Index() {
               <div className="flex flex-wrap items-end justify-between gap-6">
                 <SectionHeading label="Results" title="Before and after" />
                 <Link to="/results" className="site-btn-quiet site-btn-sm">
-                  See all results
+                  See more before-and-after detailing results
                 </Link>
               </div>
               <p className="mt-5 text-[var(--text-muted)]">Drag the handle to compare.</p>
@@ -709,13 +757,28 @@ function Index() {
         <section id="reviews" className="site-glow scroll-mt-24">
           <Container className="py-24 md:py-32">
             <div className="flex flex-wrap items-end justify-between gap-8">
-              <SectionHeading label="Reviews" title="What customers say" />
+              <SectionHeading label="Reviews" title="What do Sault customers say?" />
               <div className="site-glass flex items-center gap-4 rounded-[18px] px-5 py-4">
                 <span className="site-display tnum text-[42px] leading-none">{average.toFixed(1)}</span>
                 <div>
                   <Stars count={Math.round(average)} className="text-[var(--amber)]" />
                   <p className="mt-1 text-[13.5px] text-[var(--text-muted)]">
-                    from {reviews.length} review{reviews.length === 1 ? "" : "s"}
+                    {reviewTotal} five-star reviews on{" "}
+                    {hero?.googleReviewsUrl ? (
+                      <a href={hero.googleReviewsUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                        Google
+                      </a>
+                    ) : (
+                      "Google"
+                    )}{" "}
+                    and{" "}
+                    {hero?.facebookUrl ? (
+                      <a href={hero.facebookUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                        Facebook
+                      </a>
+                    ) : (
+                      "Facebook"
+                    )}
                   </p>
                 </div>
               </div>
@@ -743,7 +806,50 @@ function Index() {
           </Container>
         </section>
 
-        <BookingBand phone={phone} email={email} area={area} />
+        {/* Winter: the angle the whole page is written around (draft.md). */}
+        <section id="winter" className="scroll-mt-24 border-t border-[var(--line)]">
+          <Container className="grid gap-10 py-24 md:py-28 lg:grid-cols-[1fr_1.2fr] lg:items-start">
+            <h2 className="max-w-[16ch] text-[clamp(2.2rem,4.6vw,3.75rem)] leading-[1]">
+              What does winter do to a car in Sault Ste. Marie?
+            </h2>
+            <div className="max-w-[62ch] space-y-5 text-[17px] leading-relaxed text-[var(--text-muted)]">
+              <p>
+                It packs road salt and sand into every carpet, mat and seam, and leaves a film of
+                grime on the paint that a quick car wash doesn't fully lift. The longer it sits, the
+                harder it is to get out, and salt left on metal speeds up rust.
+              </p>
+              <p>
+                The Sault gets about{" "}
+                <a
+                  href="https://www.currentresults.com/Weather/Canada/Ontario/snowfall-annual-average.php"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white"
+                >
+                  320 cm of snow a year on Environment Canada's climate normals
+                </a>
+                , so the roads stay salted for months. AAA estimated that American drivers spent{" "}
+                <a
+                  href="https://www.thedrive.com/news/7824/winter-road-de-icers-like-salt-cause-3-billion-in-car-rust-damage-per-year"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white"
+                >
+                  $15.4 billion over five years fixing rust damage from road salt and de-icers
+                </a>
+                . The same salt goes down here.
+              </p>
+            </div>
+          </Container>
+        </section>
+
+        <BookingBand
+          phone={phone}
+          email={email}
+          area={area}
+          title="Ready to get the winter out of your car?"
+          text="Pick a package, pick a time, and you're booked. I'll confirm the same day."
+        />
 
         {/* FAQ */}
         <section id="faq" className="site-glow scroll-mt-24">
@@ -789,6 +895,14 @@ function Index() {
                     >
                       <p className="max-w-[64ch] px-6 pb-6 leading-relaxed text-[var(--text-muted)]">
                         {f.a}
+                        {/mobile|come to (me|you)/i.test(f.q) && (
+                          <>
+                            {" "}
+                            <Link to="/book" className="font-medium text-white underline decoration-white/30 underline-offset-4 hover:decoration-white">
+                              Book mobile service
+                            </Link>
+                          </>
+                        )}
                       </p>
                     </motion.div>
                   </div>

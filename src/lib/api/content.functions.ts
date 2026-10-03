@@ -312,6 +312,9 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     statRatingLabel: s.statRatingLabel,
     badge: s.heroBadge,
     pill: s.heroPill,
+    reviewTotal: s.reviewTotal ?? 15,
+    googleReviewsUrl: s.googleReviewsUrl ?? "",
+    facebookUrl: s.facebookUrl ?? "",
   };
 });
 

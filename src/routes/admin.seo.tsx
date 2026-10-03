@@ -99,6 +99,9 @@ function Seo() {
           statRatingLabel: s.statRatingLabel,
           heroBadge: s.heroBadge,
           heroPill: s.heroPill,
+          reviewTotal: s.reviewTotal,
+          googleReviewsUrl: s.googleReviewsUrl,
+          facebookUrl: s.facebookUrl,
         },
       });
       setS(res.settings);
@@ -414,6 +417,34 @@ function Seo() {
               value={s.heroPill}
               maxLength={80}
               onChange={(e) => set("heroPill", e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Five-star reviews (total)"
+            hint={`Shown as "${s.reviewTotal} five-star reviews on Google and Facebook" in the reviews section.`}
+          >
+            <input
+              className={inputCls}
+              type="number"
+              min={0}
+              value={s.reviewTotal}
+              onChange={(e) => set("reviewTotal", Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Google reviews link" hint="Your Google Business Profile reviews page.">
+            <input
+              className={inputCls}
+              value={s.googleReviewsUrl}
+              placeholder="https://g.page/r/..."
+              onChange={(e) => set("googleReviewsUrl", e.target.value)}
+            />
+          </Field>
+          <Field label="Facebook page link">
+            <input
+              className={inputCls}
+              value={s.facebookUrl}
+              placeholder="https://www.facebook.com/..."
+              onChange={(e) => set("facebookUrl", e.target.value)}
             />
           </Field>
         </div>

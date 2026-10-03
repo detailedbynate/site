@@ -1612,6 +1612,10 @@ export const saveSiteSettings = createServerFn({ method: "POST" })
       statRatingLabel: z.string().max(40),
       heroBadge: z.string().max(80),
       heroPill: z.string().max(80),
+      // The homepage reviews line and where it links.
+      reviewTotal: z.number().int().min(0).max(100000),
+      googleReviewsUrl: z.string().max(500),
+      facebookUrl: z.string().max(500),
     }),
   )
   .handler(async ({ data }) => {

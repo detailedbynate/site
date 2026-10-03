@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { isCoatingService, quote } from "../services";
 import { isSeasonDate, packagePrice, promoFromSettings, seasonDiscount } from "../promo";
+import { absoluteUrl, formatPhone, siteOrigin } from "../site-url";
 
 // NOTE: everything imported only *inside* a handler below (the .server.ts
 // modules) is tree-shaken out of the client bundle. Keep it that way —
@@ -79,7 +80,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     business: {
       name: settings.businessName,
       email: settings.contactEmail,
-      phone: settings.contactPhone,
+      phone: formatPhone(settings.contactPhone),
       serviceArea: settings.serviceArea,
     },
   };
@@ -355,7 +356,7 @@ export const createBooking = createServerFn({ method: "POST" })
 
     // Coatings need a clean, covered space to apply and cure — shop only.
     if (isCoatingService(service.id) && data.location === "mobile") {
-      throw new Error("Ceramic coating is done at the shop only. Please choose At the shop.");
+      throw new Error("Ceramic coating is drop-off only. Please choose Drop-off.");
     }
 
     let discount = 0;
@@ -385,7 +386,7 @@ export const createBooking = createServerFn({ method: "POST" })
     ).toISOString();
 
     const vehicleLabel = `${data.vehicle.year} ${data.vehicle.make} ${data.vehicle.model} (${data.vehicle.color})`;
-    const locationLabel = data.location === "mobile" ? `Mobile — ${data.address}` : "At the shop";
+    const locationLabel = data.location === "mobile" ? `Mobile — ${data.address}` : "Drop-off";
 
     const googleEventId = await createCalendarEvent({
       summary: `${service.title} Detail — ${data.name}`,
@@ -526,10 +527,11 @@ export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () =>
     tagline: s.siteTagline,
     description: s.siteDescription,
     keywords: s.siteKeywords,
-    ogImageUrl: s.ogImageUrl,
+    // Absolute, so link previews that ignore relative URLs still get it.
+    ogImageUrl: absoluteUrl(siteOrigin(s.siteUrl), s.ogImageUrl),
     faviconUrl: s.faviconUrl,
     twitterHandle: s.twitterHandle,
-    siteUrl: s.siteUrl,
+    siteUrl: siteOrigin(s.siteUrl),
     businessName: s.businessName,
     // Cookieless analytics only — see the settings comment. Sent to the
     // browser on purpose: it is a public script tag either way.
@@ -545,8 +547,9 @@ export const getSiteMeta = createServerFn({ method: "GET" }).handler(async () =>
 /** Before/after pairs for the public gallery. */
 export const getPublicGallery = createServerFn({ method: "GET" }).handler(async () => {
   const { listGallery, findPhoto } = await import("../db.server");
-  const { readPhotoDataUrl } = await import("../uploads.server");
 
+  // Served as normal files (/img/<id>, cached, lazy-loaded) rather than
+  // inlined as base64: inlined, two pairs made the homepage HTML 4 MB.
   const pairs = (await listGallery()).filter((p) => p.active);
   return {
     pairs: await Promise.all(
@@ -558,10 +561,91 @@ export const getPublicGallery = createServerFn({ method: "GET" }).handler(async 
           detail: p.detail,
           description: p.description,
           packageLabel: p.packageLabel,
-          beforeUrl: b ? await readPhotoDataUrl(b.id, b.mime) : null,
-          afterUrl: a ? await readPhotoDataUrl(a.id, a.mime) : null,
+          beforeUrl: b ? `/img/${b.id}` : null,
+          afterUrl: a ? `/img/${a.id}` : null,
         };
       }),
     ),
   };
+});
+
+/**
+ * JSON-LD for the homepage: the business, its packages and the FAQ.
+ *
+ * Built from live data so it can't drift from the page: prices from the
+ * catalog, hours from the weekly schedule, and only FAQs that are actually
+ * shown on the homepage (Google wants FAQPage answers to be visible).
+ * No street address: it's a service-area business.
+ */
+export const getHomeSchema = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSettings, listServices, listFaqs } = await import("../db.server");
+  const { isCoatingService } = await import("../services");
+  const { schemaPhone } = await import("../site-url");
+  const [s, services, faqs] = await Promise.all([getSettings(), listServices(), listFaqs()]);
+
+  const origin = siteOrigin(s.siteUrl);
+  const businessId = `${origin}/#business`;
+  const area = { "@type": "City", name: "Sault Ste. Marie, Ontario" };
+  const hhmm = (h: number) =>
+    `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  // One entry per distinct set of hours, e.g. Mon–Sat 08:00–18:00.
+  const byHours = new Map<string, string[]>();
+  (s.weeklySchedule ?? []).forEach((d, i) => {
+    if (!d?.open || d.closeHour <= d.openHour) return;
+    const key = `${hhmm(d.openHour)}-${hhmm(d.closeHour)}`;
+    byHours.set(key, [...(byHours.get(key) ?? []), dayNames[i]!]);
+  });
+  const hours = [...byHours.entries()].map(([key, days]) => {
+    const [opens, closes] = key.split("-");
+    return { "@type": "OpeningHoursSpecification", dayOfWeek: days, opens, closes };
+  });
+
+  const packages = services.filter((p) => p.active && !isCoatingService(p.id));
+  const phone = schemaPhone(s.contactPhone);
+  const shownFaqs = faqs.filter((f) => f.active && f.question.trim() && f.answer.trim());
+
+  const graph: Record<string, unknown>[] = [
+    {
+      "@type": "AutomotiveBusiness",
+      "@id": businessId,
+      name: s.businessName || "Detailed by Nate",
+      url: `${origin}/`,
+      ...(phone ? { telephone: phone } : {}),
+      priceRange: "$$",
+      founder: { "@type": "Person", name: "Nate" },
+      foundingDate: "2021",
+      areaServed: area,
+      ...(hours.length ? { openingHoursSpecification: hours } : {}),
+    },
+    {
+      "@type": "Service",
+      "@id": `${origin}/#car-detailing`,
+      serviceType: "Car detailing",
+      name: "Car detailing in Sault Ste. Marie",
+      provider: { "@id": businessId },
+      areaServed: area,
+      hasOfferCatalog: {
+        "@type": "OfferCatalog",
+        name: "Detailing packages",
+        itemListElement: packages.map((p) => ({
+          "@type": "Offer",
+          itemOffered: { "@type": "Service", name: p.subtitle ? `${p.title}: ${p.subtitle}` : p.title },
+          priceSpecification: { "@type": "PriceSpecification", minPrice: p.priceValue, priceCurrency: "CAD" },
+        })),
+      },
+    },
+  ];
+  if (shownFaqs.length) {
+    graph.push({
+      "@type": "FAQPage",
+      mainEntity: shownFaqs.map((f) => ({
+        "@type": "Question",
+        name: f.question,
+        acceptedAnswer: { "@type": "Answer", text: f.answer },
+      })),
+    });
+  }
+  return { origin, json: JSON.stringify({ "@context": "https://schema.org", "@graph": graph }) };
 });

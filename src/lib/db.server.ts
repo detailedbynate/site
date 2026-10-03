@@ -299,6 +299,10 @@ export interface Settings {
   heroBadge: string;
   /** The plain-text pill after the counters. Blank hides it. */
   heroPill: string;
+  /** Reviews line on the homepage: "15 five-star reviews on Google and Facebook". */
+  reviewTotal: number;
+  googleReviewsUrl: string;
+  facebookUrl: string;
   twitterHandle: string;
 
   // --- Calendar event templates ({{vars}}, same set as emails) ---
@@ -670,14 +674,17 @@ export const DEFAULT_SETTINGS: Settings = {
   heroHeadline: "Make your car",
   heroHeadlineAccent: "look untouchable.",
   heroSubtext:
-    "Concours-grade paint correction, ceramic coatings and interior restoration — done in-studio with obsessive attention to every reflection.",
+    "Hand car detailing in Sault Ste. Marie, inside and out. Drop it off with me, or I come to you.",
   statClients: 150,
   statVehicles: 200,
   statClientsLabel: "clients served",
   statVehiclesLabel: "vehicles detailed",
   statRatingLabel: "star rating",
   heroBadge: "Now booking — Summer detail season",
-  heroPill: "No deposit required · Mobile & in-studio",
+  heroPill: "No deposit · Mobile or drop-off · Sault Ste. Marie",
+  reviewTotal: 15,
+  googleReviewsUrl: "",
+  facebookUrl: "",
   twitterHandle: "",
   calendarEventTitle: "{{service}} — {{fullName}}",
   calendarEventDescription: `Service: {{service}}
@@ -1370,7 +1377,177 @@ function getDB(): DatabaseSync {
   importLegacyJSON();
   seedIfEmpty();
   seedCeramicOnce();
+  applySeoStep1Once();
+  applyHomeDraftOnce();
   return db;
+}
+
+/**
+ * SEO plan, step 3 (2026-10): the homepage hero and FAQ from draft.md.
+ * Each draft question replaces the existing FAQ on the same topic (or is
+ * added); FAQs on other topics are kept, after the draft ones. Runs once,
+ * so later edits in the admin stick.
+ */
+function applyHomeDraftOnce(): void {
+  const d = db!;
+  const FLAG = "appliedHomeDraft1";
+  if (d.prepare("SELECT 1 FROM settings WHERE key = ?").get(FLAG)) return;
+  const setSetting = d.prepare(
+    "INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+  );
+  const drafts: { id: string; match: string; q: string; a: string }[] = [
+    {
+      "id": "draft-cost",
+      "match": "cost|price|how much",
+      "q": "How much does car detailing cost in Sault Ste. Marie?",
+      "a": "With me, a full interior and exterior detail starts at $100, an interior-only detail at $85 and an exterior hand wash at $70. Mobile service adds $25, and there's no deposit."
+    },
+    {
+      "id": "draft-included",
+      "match": "includ",
+      "q": "What is included in a full car detail?",
+      "a": "A full detail (my Diamond package) covers the whole inside and outside: vacuum, carpets, seats, mats, dash and every interior surface, plus an exterior hand wash, wheels, tires and a final finish. Every package starts with a pre-detail inspection so nothing gets missed."
+    },
+    {
+      "id": "draft-interior",
+      "match": "interior",
+      "q": "Do you offer interior-only detailing in Sault Ste. Marie?",
+      "a": "Yes. The Gold package is interior only: steam cleaning, a full wipe-down, mats and carpets restored, and interior glass, starting at $85."
+    },
+    {
+      "id": "draft-mobile",
+      "match": "come to (me|you)|mobile",
+      "q": "Is there mobile car detailing in Sault Ste. Marie?",
+      "a": "Yes. I come to your home or work anywhere in Sault Ste. Marie for an extra $25, as long as there's a water faucet and a power outlet I can use."
+    },
+    {
+      "id": "draft-worth",
+      "match": "worth",
+      "q": "Is it worth paying for car detailing?",
+      "a": "If your car has been through a Sault winter, usually yes. A detail gets out the salt and sand a quick wash leaves behind, and it saves you most of a day doing it yourself."
+    },
+    {
+      "id": "draft-duration",
+      "match": "how long",
+      "q": "How long does a car detail take?",
+      "a": "A full Diamond detail takes 3 to 5 hours depending on the vehicle's size and condition. An exterior-only Silver wash takes about 2 hours."
+    }
+  ];
+
+  d.exec("BEGIN");
+  try {
+    setSetting.run("heroHeadline", JSON.stringify("Car Detailing in Sault Ste. Marie"));
+    setSetting.run("heroHeadlineAccent", JSON.stringify("That Undoes Winter"));
+    setSetting.run("heroSubtext", JSON.stringify("Salt on the carpets, sand in the seat rails, slush dried onto everything. I'm Nate, and I do hand car detailing in Sault Ste. Marie, inside and out, at your place or dropped off with me. No deposit, and booking takes about a minute."));
+
+    const existing = d.prepare("SELECT id, question FROM faqs ORDER BY sortOrder ASC").all() as {
+      id: string;
+      question: string;
+    }[];
+    const used = new Set<string>();
+    drafts.forEach((f, i) => {
+      const re = new RegExp(f.match, "i");
+      const hit = existing.find((e) => !used.has(e.id) && re.test(e.question));
+      if (hit) {
+        used.add(hit.id);
+        d.prepare("UPDATE faqs SET question = ?, answer = ?, active = 1, sortOrder = ? WHERE id = ?").run(
+          f.q,
+          f.a,
+          i,
+          hit.id,
+        );
+      } else {
+        d.prepare(
+          "INSERT OR REPLACE INTO faqs (id, question, answer, active, sortOrder, createdAt) VALUES (?,?,?,1,?,?)",
+        ).run(f.id, f.q, f.a, i, new Date().toISOString());
+      }
+    });
+    // Everything else keeps its order, after the draft questions.
+    existing
+      .filter((e) => !used.has(e.id))
+      .forEach((e, i) => d.prepare("UPDATE faqs SET sortOrder = ? WHERE id = ?").run(drafts.length + i, e.id));
+
+    setSetting.run(FLAG, "true");
+    d.exec("COMMIT");
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+/**
+ * SEO plan, step 1 (2026-10): the new homepage title and description, and
+ * "drop-off" in place of "studio" / "in-shop" in owner-edited copy. The
+ * drop-off spot is Nate's home garage, so "studio" and "shop" oversell it.
+ *
+ * Runs once, guarded by a settings flag, so anything edited afterwards in
+ * the admin is left alone.
+ */
+function applySeoStep1Once(): void {
+  const d = db!;
+  const FLAG = "appliedSeoStep1";
+  if (d.prepare("SELECT 1 FROM settings WHERE key = ?").get(FLAG)) return;
+
+  const swaps: [RegExp, string][] = [
+    [/Mobile & in-studio/g, "Mobile or drop-off"],
+    [/Mobile and in-studio/g, "Mobile and drop-off"],
+    [/[Ii]n-shop and mobile/g, "drop-off and mobile"],
+    [/Bring it to the studio/g, "Drop it off with me"],
+    [/\bIn-(studio|shop)\b/g, "Drop-off"],
+    [/\bin-(studio|shop)\b/g, "drop-off"],
+  ];
+  const fix = (text: string) => swaps.reduce((t, [re, to]) => t.replace(re, to), text);
+  const setSetting = d.prepare(
+    "INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+  );
+
+  d.exec("BEGIN");
+  try {
+    for (const row of d.prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[]) {
+      let value: unknown;
+      try {
+        value = JSON.parse(row.value);
+      } catch {
+        continue;
+      }
+      if (typeof value === "string" && fix(value) !== value) {
+        setSetting.run(row.key, JSON.stringify(fix(value)));
+      }
+    }
+    setSetting.run("siteTitle", JSON.stringify("Car Detailing in Sault Ste. Marie | Detailed by Nate"));
+    setSetting.run("siteDescription", JSON.stringify("Hand car detailing in Sault Ste. Marie. Salt, sand and winter grime gone, inside and out. Mobile or drop-off, no deposit. Book online in about a minute."));
+
+    for (const f of d.prepare("SELECT id, question, answer FROM faqs").all() as {
+      id: string;
+      question: string;
+      answer: string;
+    }[]) {
+      if (fix(f.question) !== f.question || fix(f.answer) !== f.answer) {
+        d.prepare("UPDATE faqs SET question = ?, answer = ? WHERE id = ?").run(fix(f.question), fix(f.answer), f.id);
+      }
+    }
+    for (const s of d.prepare("SELECT id, subtitle, description, features FROM services").all() as {
+      id: string;
+      subtitle: string;
+      description: string;
+      features: string;
+    }[]) {
+      const next = [fix(s.subtitle), fix(s.description ?? ""), fix(s.features ?? "[]")];
+      if (next[0] !== s.subtitle || next[1] !== (s.description ?? "") || next[2] !== (s.features ?? "[]")) {
+        d.prepare("UPDATE services SET subtitle = ?, description = ?, features = ? WHERE id = ?").run(
+          next[0],
+          next[1],
+          next[2],
+          s.id,
+        );
+      }
+    }
+    setSetting.run(FLAG, "true");
+    d.exec("COMMIT");
+  } catch (err) {
+    d.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 /**

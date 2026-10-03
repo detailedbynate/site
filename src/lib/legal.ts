@@ -16,7 +16,7 @@
 
 export const DEFAULT_PRIVACY = `## Who we are
 
-{{business}} ("we") provides mobile and in-shop car detailing. If you have any
+{{business}} ("we") provides mobile and drop-off car detailing. If you have any
 question about this policy, contact us at {{email}}{{phoneClause}}.
 
 ## What we collect

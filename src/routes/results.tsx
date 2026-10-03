@@ -32,17 +32,25 @@ export const Route = createFileRoute("/results")({
       return { gallery: [], business: null, review: null };
     }
   },
-  head: ({ loaderData }) => {
+  head: ({ loaderData, matches }) => {
     const name = loaderData?.business?.name || "Detailed by Nate";
-    const title = `Results — ${name} | Before & After Gallery`;
-    const description = `Real before-and-after detailing results from ${name}.`;
+    const title = `Car Detailing Results in Sault Ste. Marie | ${name}`;
+    const description =
+      "Real before-and-after car detailing results from around Sault Ste. Marie. Every job done by hand by Nate.";
+    const origin =
+      (matches[0]?.loaderData as { meta?: { siteUrl?: string } } | undefined)?.meta?.siteUrl ||
+      "https://detailedbynate.com";
     return {
       meta: [
         { title },
         { name: "description", content: description },
-        { property: "og:title", content: `Results — ${name}` },
+        { property: "og:title", content: title },
         { property: "og:description", content: description },
+        { property: "og:url", content: `${origin}/results` },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
       ],
+      links: [{ rel: "canonical", href: `${origin}/results` }],
     };
   },
   component: ResultsPage,
@@ -72,8 +80,10 @@ function ResultsPage() {
         <Container className="pt-40 md:pt-48">
           <h1 className="text-[clamp(2.2rem,5.2vw,4.4rem)] font-extrabold leading-[0.98]">Results</h1>
           <p className="mt-5 max-w-[56ch] text-[17px] leading-relaxed text-[var(--text-muted)]">
-            Real jobs from around the {area}. Drag the handle on each photo to compare before and
-            after.
+            <Link to="/" className="underline decoration-white/30 underline-offset-4 hover:decoration-white">
+              Real jobs from around the {area}
+            </Link>
+            . Drag the handle on each photo to compare before and after.
           </p>
         </Container>
 

@@ -206,7 +206,7 @@ function ManageBooking() {
           />
           <Row
             icon={MapPin}
-            label={booking.location === "mobile" ? (booking.address ?? "Mobile") : "At the shop"}
+            label={booking.location === "mobile" ? (booking.address ?? "Mobile") : "Drop-off"}
           />
           <Row icon={CreditCard} label={`${money(booking.totalPrice)} total`} />
         </div>

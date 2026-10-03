@@ -237,7 +237,12 @@ export async function brandingImageResponse(url: URL): Promise<Response | null> 
       .map((v) => v.replace(/^\/img\//, ""))
       .filter(Boolean),
   );
-  if (!allowed.has(id)) return null;
+  // Before/after pairs the owner has published to the public gallery.
+  if (!allowed.has(id)) {
+    const { listGallery } = await import("./db.server");
+    const published = (await listGallery().catch(() => [])).filter((p) => p.active);
+    if (!published.some((p) => p.beforePhotoId === id || p.afterPhotoId === id)) return null;
+  }
 
   const photo = await findPhoto(id);
   if (!photo) return null;

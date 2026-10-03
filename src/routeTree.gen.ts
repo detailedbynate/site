@@ -12,7 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as BookRouteImport } from './routes/book'
+import { Route as InteriorDetailingRouteImport } from './routes/interior-detailing'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MobileDetailingRouteImport } from './routes/mobile-detailing'
+import { Route as PricesRouteImport } from './routes/prices'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResultsRouteImport } from './routes/results'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -54,9 +57,24 @@ const BookRoute = BookRouteImport.update({
   path: '/book',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InteriorDetailingRoute = InteriorDetailingRouteImport.update({
+  id: '/interior-detailing',
+  path: '/interior-detailing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MobileDetailingRoute = MobileDetailingRouteImport.update({
+  id: '/mobile-detailing',
+  path: '/mobile-detailing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PricesRoute = PricesRouteImport.update({
+  id: '/prices',
+  path: '/prices',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -189,7 +207,10 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/book': typeof BookRoute
+  '/interior-detailing': typeof InteriorDetailingRoute
   '/login': typeof LoginRoute
+  '/mobile-detailing': typeof MobileDetailingRoute
+  '/prices': typeof PricesRoute
   '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
   '/terms': typeof TermsRoute
@@ -219,7 +240,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/book': typeof BookRoute
+  '/interior-detailing': typeof InteriorDetailingRoute
   '/login': typeof LoginRoute
+  '/mobile-detailing': typeof MobileDetailingRoute
+  '/prices': typeof PricesRoute
   '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
   '/terms': typeof TermsRoute
@@ -251,7 +275,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/book': typeof BookRoute
+  '/interior-detailing': typeof InteriorDetailingRoute
   '/login': typeof LoginRoute
+  '/mobile-detailing': typeof MobileDetailingRoute
+  '/prices': typeof PricesRoute
   '/privacy': typeof PrivacyRoute
   '/results': typeof ResultsRoute
   '/terms': typeof TermsRoute
@@ -284,7 +311,10 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/book'
+    | '/interior-detailing'
     | '/login'
+    | '/mobile-detailing'
+    | '/prices'
     | '/privacy'
     | '/results'
     | '/terms'
@@ -314,7 +344,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/book'
+    | '/interior-detailing'
     | '/login'
+    | '/mobile-detailing'
+    | '/prices'
     | '/privacy'
     | '/results'
     | '/terms'
@@ -345,7 +378,10 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/book'
+    | '/interior-detailing'
     | '/login'
+    | '/mobile-detailing'
+    | '/prices'
     | '/privacy'
     | '/results'
     | '/terms'
@@ -377,7 +413,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   BookRoute: typeof BookRoute
+  InteriorDetailingRoute: typeof InteriorDetailingRoute
   LoginRoute: typeof LoginRoute
+  MobileDetailingRoute: typeof MobileDetailingRoute
+  PricesRoute: typeof PricesRoute
   PrivacyRoute: typeof PrivacyRoute
   ResultsRoute: typeof ResultsRoute
   TermsRoute: typeof TermsRoute
@@ -407,11 +446,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/interior-detailing': {
+      id: '/interior-detailing'
+      path: '/interior-detailing'
+      fullPath: '/interior-detailing'
+      preLoaderRoute: typeof InteriorDetailingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mobile-detailing': {
+      id: '/mobile-detailing'
+      path: '/mobile-detailing'
+      fullPath: '/mobile-detailing'
+      preLoaderRoute: typeof MobileDetailingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prices': {
+      id: '/prices'
+      path: '/prices'
+      fullPath: '/prices'
+      preLoaderRoute: typeof PricesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -646,7 +706,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   BookRoute: BookRoute,
+  InteriorDetailingRoute: InteriorDetailingRoute,
   LoginRoute: LoginRoute,
+  MobileDetailingRoute: MobileDetailingRoute,
+  PricesRoute: PricesRoute,
   PrivacyRoute: PrivacyRoute,
   ResultsRoute: ResultsRoute,
   TermsRoute: TermsRoute,

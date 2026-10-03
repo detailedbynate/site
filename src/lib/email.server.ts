@@ -60,7 +60,7 @@ export async function buildVars(booking: Booking): Promise<Record<string, string
     time,
     reference: booking.reference,
     total: `$${due + (booking.tip ?? 0)}`,
-    location: booking.location === "mobile" ? `Mobile — ${booking.address}` : "At the shop",
+    location: booking.location === "mobile" ? `Mobile — ${booking.address}` : "Drop-off",
     vehicle: booking.vehicle
       ? `${booking.vehicle.year} ${booking.vehicle.make} ${booking.vehicle.model}`
       : "your vehicle",
