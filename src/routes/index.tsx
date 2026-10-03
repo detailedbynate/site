@@ -429,26 +429,31 @@ function Index() {
             {statCells > 0 && (
               <motion.dl
                 {...rise(0.4)}
-                className={`site-glass mt-14 grid grid-cols-2 overflow-hidden rounded-[22px] md:mt-20 ${
+                className={`site-glass mt-14 grid overflow-hidden rounded-[22px] md:mt-20 ${
+                  statPills.length >= 3 ? "grid-cols-3" : statPills.length === 2 ? "grid-cols-2" : "grid-cols-1"
+                } ${
                   statCells >= 4 ? "md:grid-cols-4" : statCells === 3 ? "md:grid-cols-3" : "md:grid-cols-2"
                 }`}
               >
                 {statPills.map((s) => (
                   <div
                     key={s.label}
-                    className="flex flex-col-reverse border-white/10 px-6 py-6 md:border-l md:first:border-l-0"
+                    className="flex min-w-0 flex-col-reverse justify-end border-l border-white/10 px-4 py-5 first:border-l-0 sm:px-6 sm:py-6"
                   >
-                    <dt className="mt-1.5 text-[14px] text-white/65">{s.label}</dt>
-                    <dd className="flex items-center gap-3">
-                      <span className="site-display tnum text-[clamp(1.9rem,3.4vw,2.6rem)] leading-none">
+                    <dt className="mt-1.5 text-[12.5px] leading-snug text-white/65 sm:text-[14px]">{s.label}</dt>
+                    {/* Phones: small stars tucked under the number. Desktop: beside it. */}
+                    <dd className="flex flex-col items-start gap-2 lg:flex-row lg:items-center lg:gap-3">
+                      <span className="site-display tnum text-[clamp(1.6rem,3.4vw,2.6rem)] leading-none">
                         <Counter to={s.value} suffix={s.suffix} />
                       </span>
-                      {s.stars && <Stars className="hidden text-[var(--amber)] sm:inline-flex" />}
+                      {s.stars && (
+                        <Stars className="text-[var(--amber)] [&_svg]:h-3 [&_svg]:w-3 lg:[&_svg]:h-4 lg:[&_svg]:w-4" />
+                      )}
                     </dd>
                   </div>
                 ))}
                 {heroPill.trim() && (
-                  <div className="col-span-2 flex items-center border-t border-white/10 px-6 py-6 md:col-span-1 md:border-l md:border-t-0">
+                  <div className="col-span-full flex items-center border-t border-white/10 px-4 py-4 sm:px-6 sm:py-6 md:col-span-1 md:border-l md:border-t-0">
                     <p className="text-[15px] font-medium leading-snug text-white/85">{heroPill}</p>
                   </div>
                 )}
