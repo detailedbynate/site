@@ -5,14 +5,18 @@ import { X } from "lucide-react";
 import { useBookingModal } from "@/components/booking/BookingModal";
 import type { Promo } from "@/lib/promo";
 
-const DELAY_MS = 3500;
+/** Seconds into a visit before the popup appears. */
+const DELAY_MS = 10_000;
+const VISIT_START = "dbn-visit-start";
 
 /**
- * One-time homepage popup for next-season reservations.
+ * Next-season reservations popup, on every public page.
  *
- * Shown once per visitor per promotion — dismissing it is remembered in
- * localStorage, keyed on the season and percentage so a new promotion shows
- * again. Never shown over the booking form.
+ * Shows once per visit: 10 seconds after someone opens the site, and again
+ * the next time they come back. Closing it is remembered in sessionStorage,
+ * which is cleared when the tab closes, so moving between pages doesn't bring
+ * it back. The 10 seconds count from the start of the visit, not each page.
+ * Never shown over the booking form.
  */
 export function PromoPopup({ promo, image }: { promo: Promo | null; image: string }) {
   const booking = useBookingModal();
@@ -21,21 +25,26 @@ export function PromoPopup({ promo, image }: { promo: Promo | null; image: strin
 
   useEffect(() => {
     if (!promo?.enabled) return;
+    let wait = DELAY_MS;
     try {
-      if (localStorage.getItem(key)) return;
+      if (sessionStorage.getItem(key)) return;
+      const now = Date.now();
+      const start = Number(sessionStorage.getItem(VISIT_START)) || now;
+      sessionStorage.setItem(VISIT_START, String(start));
+      wait = Math.max(0, DELAY_MS - (now - start));
     } catch {
-      // Storage blocked (private mode, strict settings): show it once per load.
+      // Storage blocked (private mode, strict settings): show it once per page.
     }
-    const timer = setTimeout(() => setOpen(true), DELAY_MS);
+    const timer = setTimeout(() => setOpen(true), wait);
     return () => clearTimeout(timer);
   }, [promo?.enabled, key]);
 
   const dismiss = () => {
     setOpen(false);
     try {
-      localStorage.setItem(key, "1");
+      sessionStorage.setItem(key, "1");
     } catch {
-      // Nothing to do — it simply shows again next visit.
+      // Nothing to do — it simply shows again on the next page.
     }
   };
 

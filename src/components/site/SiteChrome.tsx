@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 
 import heroCar from "@/assets/hero-car.jpg";
 import { useBookingModal } from "@/components/booking/BookingModal";
+import { PromoPopup } from "@/components/site/PromoPopup";
 
 // Pieces every public page shares: the page width, the header, the footer,
 // the booking section and the rating stars. One place, so pages can't drift.
@@ -79,12 +80,21 @@ function PromoBar() {
 }
 
 /** Floating frosted bar over the page. */
-export function SiteNav({ phone }: { phone?: string | null }) {
+export function SiteNav({
+  phone,
+  promoImage,
+}: {
+  phone?: string | null;
+  /** Picture in the reservations popup; the homepage passes its hero photo. */
+  promoImage?: string;
+}) {
   const booking = useBookingModal();
   const [open, setOpen] = useState(false);
+  const promo = useLoaderData({ from: "__root__" })?.meta?.promo ?? null;
 
   return (
     <header className="fixed inset-x-0 top-0 z-40">
+      <PromoPopup promo={promo} image={promoImage ?? heroCar} />
       <PromoBar />
       <div className="px-3 pt-3 sm:px-5 sm:pt-4">
       <div className="mx-auto max-w-[1240px] rounded-[18px] border border-white/10 bg-[#0a0a0c]/55 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] backdrop-blur-xl">

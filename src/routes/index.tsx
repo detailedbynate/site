@@ -16,7 +16,6 @@ import serviceGold from "@/assets/service-gold.jpg";
 import serviceSilver from "@/assets/service-silver.jpg";
 import { BeforeAfter } from "@/components/BeforeAfter";
 import { useBookingModal } from "@/components/booking/BookingModal";
-import { PromoPopup } from "@/components/site/PromoPopup";
 import {
   BookingBand,
   Container,
@@ -337,8 +336,7 @@ function Index() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="site min-h-screen overflow-x-clip">
-        <SiteNav phone={phone} />
-        <PromoPopup promo={promo} image={heroUrl ?? heroCar} />
+        <SiteNav phone={phone} promoImage={heroUrl ?? heroCar} />
 
         {/* Hero — full-bleed photo with frosted panels over it. An uploaded
             hero photo (SEO & branding) replaces the placeholder. */}
