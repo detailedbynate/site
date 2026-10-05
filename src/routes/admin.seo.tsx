@@ -33,9 +33,25 @@ export const Route = createFileRoute("/admin/seo")({
 type Settings = Awaited<ReturnType<typeof getAdminSettings>>["settings"];
 type Pair = Awaited<ReturnType<typeof listAdminGallery>>["pairs"][number];
 
+/** iPhone photos (.heic / .heif). Only Safari can draw these natively. */
+function isHeic(file: File): boolean {
+  return /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+}
+
+/**
+ * Turn an iPhone HEIC photo into a JPEG the browser can draw. The converter
+ * is about 1 MB, so it's only downloaded when someone actually picks one.
+ */
+async function toDrawable(file: File): Promise<Blob> {
+  if (!isHeic(file)) return file;
+  const { default: heic2any } = await import("heic2any");
+  const out = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+  return Array.isArray(out) ? out[0]! : out;
+}
+
 /** Same downscale as the booking photo uploader — keeps requests small. */
 async function downscale(file: File, maxEdge = 1600): Promise<string> {
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await createImageBitmap(await toDrawable(file));
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
@@ -711,7 +727,7 @@ function DropSlot({
       <input
         ref={ref}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         className="hidden"
         onChange={(e) => onFile(e.target.files?.[0])}
       />
