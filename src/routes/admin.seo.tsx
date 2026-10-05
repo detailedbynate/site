@@ -38,20 +38,40 @@ function isHeic(file: File): boolean {
   return /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
 }
 
+/** A readable message from whatever a decoder threw (often not an Error). */
+function errorText(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === "object" && "message" in e && typeof e.message === "string") return e.message;
+  if (typeof e === "string" && e) return e;
+  return fallback;
+}
+
 /**
- * Turn an iPhone HEIC photo into a JPEG the browser can draw. The converter
- * is about 1 MB, so it's only downloaded when someone actually picks one.
+ * Decode a picked photo. Safari reads iPhone HEIC natively; everywhere else
+ * a HEIC goes through heic-to (an up-to-date libheif build that handles
+ * recent iPhone photos). The converter is large, so it's only downloaded
+ * when a HEIC is actually picked.
  */
-async function toDrawable(file: File): Promise<Blob> {
-  if (!isHeic(file)) return file;
-  const { default: heic2any } = await import("heic2any");
-  const out = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
-  return Array.isArray(out) ? out[0]! : out;
+async function decode(file: File): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file);
+  } catch (native) {
+    if (!isHeic(file)) throw new Error("That file isn't an image this browser can read. Try a JPEG or PNG.");
+    try {
+      const { heicTo } = await import("heic-to");
+      const jpeg = await heicTo({ blob: file, type: "image/jpeg", quality: 0.92 });
+      return await createImageBitmap(jpeg);
+    } catch (e) {
+      throw new Error(
+        `Couldn't convert that iPhone photo (${errorText(e, errorText(native, "unknown error"))}). Export it as JPEG and try again.`,
+      );
+    }
+  }
 }
 
 /** Same downscale as the booking photo uploader — keeps requests small. */
 async function downscale(file: File, maxEdge = 1600): Promise<string> {
-  const bitmap = await createImageBitmap(await toDrawable(file));
+  const bitmap = await decode(file);
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
@@ -540,7 +560,7 @@ function GalleryCard({
       if (which === "before") setBefore({ id: res.photo.id, url });
       else setAfter({ id: res.photo.id, url });
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Upload failed.");
+      onError(errorText(e, "Upload failed."));
     } finally {
       setBusy(false);
     }
