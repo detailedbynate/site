@@ -240,7 +240,14 @@ function AdminLayout() {
     );
   }
 
-  const sidebar = (
+  /*
+    Rendered twice: the desktop sidebar and the phone drawer. The drawer gets
+    no shared `layoutId`s — both copies are always mounted, and two elements
+    with one layoutId make Motion measure and animate between them (from the
+    hidden desktop copy) every time the drawer opens or the route changes.
+    The drawer closes on navigation anyway, so a sliding pill there is unseen.
+  */
+  const renderSidebar = (inDrawer: boolean) => (
     <div className="flex h-full flex-col p-3">
       <div className={`mb-4 flex items-center gap-2.5 px-1.5 pr-8 pt-1 ${collapsed ? "justify-center pr-1.5" : ""}`}>
         <span
@@ -358,14 +365,14 @@ function AdminLayout() {
                       shouting like a full gradient pill on every item. */}
                   {active && (
                     <motion.span
-                      layoutId="admin-nav-active"
+                      layoutId={inDrawer ? undefined : "admin-nav-active"}
                       transition={{ type: "spring", stiffness: 420, damping: 36 }}
                       className="absolute inset-0 -z-10 rounded-xl bg-[var(--fill-3)] ring-1 ring-inset ring-[var(--line-2)]"
                     />
                   )}
                   {active && !collapsed && (
                     <motion.span
-                      layoutId="admin-nav-rail"
+                      layoutId={inDrawer ? undefined : "admin-nav-rail"}
                       transition={{ type: "spring", stiffness: 420, damping: 36 }}
                       className="absolute -left-1 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full"
                       style={{ backgroundImage: "var(--gradient-brand)" }}
@@ -442,26 +449,22 @@ function AdminLayout() {
       */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="admin-ambient-base absolute inset-0" />
-        <motion.div
+        {/* Drift is CSS keyframes, not Motion: the compositor runs them off
+            the main thread, so they never compete with a tap or a page render. */}
+        <div
           aria-hidden
-          className="ambient absolute -left-48 -top-72 h-[620px] w-[620px] rounded-full blur-[150px]"
+          className="ambient ambient-drift-1 absolute -left-48 -top-72 h-[620px] w-[620px] rounded-full blur-[150px]"
           style={{ background: "var(--ambient-1)" }}
-          animate={{ x: [0, 60, 0], y: [0, 40, 0], scale: [1, 1.08, 1] }}
-          transition={{ duration: 34, repeat: Infinity, ease: "easeInOut" }}
         />
-        <motion.div
+        <div
           aria-hidden
-          className="ambient absolute -right-56 top-1/4 h-[560px] w-[560px] rounded-full blur-[160px]"
+          className="ambient ambient-drift-2 absolute -right-56 top-1/4 h-[560px] w-[560px] rounded-full blur-[160px]"
           style={{ background: "var(--ambient-2)" }}
-          animate={{ x: [0, -50, 0], y: [0, 60, 0], scale: [1, 1.12, 1] }}
-          transition={{ duration: 42, repeat: Infinity, ease: "easeInOut", delay: 3 }}
         />
-        <motion.div
+        <div
           aria-hidden
-          className="ambient absolute -bottom-72 left-1/3 h-[600px] w-[600px] rounded-full blur-[170px]"
+          className="ambient ambient-drift-3 absolute -bottom-72 left-1/3 h-[600px] w-[600px] rounded-full blur-[170px]"
           style={{ background: "var(--ambient-3)" }}
-          animate={{ x: [0, 40, 0], y: [0, -40, 0], scale: [1, 1.06, 1] }}
-          transition={{ duration: 50, repeat: Infinity, ease: "easeInOut", delay: 6 }}
         />
       </div>
 
@@ -471,7 +474,7 @@ function AdminLayout() {
         transition={{ type: "spring", stiffness: 260, damping: 30 }}
         className="admin-panel sticky top-0 z-30 hidden h-screen shrink-0 border-r border-[var(--line-1)] bg-[var(--fill-1)] backdrop-blur-2xl lg:block"
       >
-        {sidebar}
+        {renderSidebar(false)}
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
@@ -484,35 +487,32 @@ function AdminLayout() {
         </button>
       </motion.aside>
 
-      {/* Mobile drawer */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
-              /* No backdrop blur here on purpose. This covers the whole
-                 viewport, and blurring it forces the browser to recompute the
-                 blur for every frame of the drawer sliding in over it — the
-                 single most expensive thing on the page at the exact moment
-                 it can least afford it. At 60% black the blur was barely
-                 visible anyway. */
-              className="fixed inset-0 z-40 bg-black/60 lg:hidden"
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: "spring", stiffness: 300, damping: 32 }}
-              className="admin-theme fixed inset-y-0 left-0 z-50 w-[260px] border-r border-[var(--line-1)] bg-[var(--background)] lg:hidden"
-            >
-              {sidebar}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      {/*
+        Mobile drawer.
+
+        Always mounted and slid with a CSS transition rather than mounted on
+        open and sprung in with Motion. Motion animates `x` on the main thread,
+        and opening used to also mount the whole sidebar in the same frames —
+        so the slide started while JS was busy and dropped frames, worst on an
+        iPhone. A CSS transform transition runs on the compositor and stays
+        smooth even while the next page is rendering underneath it.
+        `inert` keeps the off-screen copy out of tab order and screen readers.
+      */}
+      <div
+        onClick={() => setMobileOpen(false)}
+        aria-hidden
+        /* No backdrop blur on purpose: it covers the whole viewport, and
+           blurring it means re-blurring the page on every frame of the fade. */
+        data-open={mobileOpen}
+        className="admin-drawer-scrim fixed inset-0 z-40 bg-black/60 lg:hidden"
+      />
+      <aside
+        inert={!mobileOpen}
+        data-open={mobileOpen}
+        className="admin-drawer admin-theme fixed inset-y-0 left-0 z-50 w-[260px] border-r border-[var(--line-1)] bg-[var(--background)] lg:hidden"
+      >
+        {renderSidebar(true)}
+      </aside>
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -546,14 +546,11 @@ function AdminLayout() {
           scroll-independent state.
         */}
         <main className="min-h-[calc(100vh-1px)] px-4 pb-28 pt-8 sm:px-8 lg:px-10 lg:pb-8">
-          <motion.div
-            key={pathname}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-          >
+          {/* CSS keyframes for the same reason as the drawer: they keep
+              running on the compositor while the new page mounts. */}
+          <div key={pathname} className="admin-page-in">
             <Outlet />
-          </motion.div>
+          </div>
         </main>
 
         {/* Phones only; the sidebar covers this from `lg` up. */}

@@ -248,11 +248,77 @@
   `animation`/`transition` are cleared here, and Motion's JS-driven transforms
   are neutralised by pinning the transform.
 */
+/*
+  Admin motion that must stay smooth while the main thread is busy (a page
+  mounting, data landing). Transform and opacity keyframes/transitions run on
+  the compositor; the Motion equivalents they replaced ran in JS every frame.
+*/
+@keyframes admin-drift-1 {
+  50% { transform: translate3d(60px, 40px, 0) scale(1.08); }
+}
+@keyframes admin-drift-2 {
+  50% { transform: translate3d(-50px, 60px, 0) scale(1.12); }
+}
+@keyframes admin-drift-3 {
+  50% { transform: translate3d(40px, -40px, 0) scale(1.06); }
+}
+.ambient-drift-1 { animation: admin-drift-1 34s ease-in-out infinite; }
+.ambient-drift-2 { animation: admin-drift-2 42s ease-in-out 3s infinite; }
+.ambient-drift-3 { animation: admin-drift-3 50s ease-in-out 6s infinite; }
+
+/*
+  On phones the three washes keep their colour but lose the filter. They are
+  already radial gradients fading to transparent, so the 150px+ blur on top
+  added little — and a blur that size over a 600px layer is among the most
+  expensive things a phone GPU can be asked to keep drawing, every frame,
+  underneath everything else.
+*/
+@media (max-width: 1023px) {
+  .admin-theme .ambient {
+    filter: none;
+  }
+}
+
+.admin-drawer {
+  transform: translate3d(-280px, 0, 0);
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+.admin-drawer[data-open="true"] {
+  transform: translate3d(0, 0, 0);
+}
+.admin-drawer-scrim {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.admin-drawer-scrim[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@keyframes admin-page-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+.admin-page-in {
+  animation: admin-page-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-theme .ambient {
     transform: none !important;
     animation: none !important;
     transition: none !important;
+  }
+
+  .admin-drawer,
+  .admin-drawer-scrim {
+    transition-duration: 0.01s;
+  }
+
+  .admin-page-in {
+    animation: none;
   }
 }
 
