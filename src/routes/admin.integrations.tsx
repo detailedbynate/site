@@ -98,7 +98,13 @@ function Integrations() {
 
     setBusy("connect");
     completeGoogleConnect({ data: { code } })
-      .then((r) => flash(`Connected${r.email ? ` as ${r.email}` : ""}. Pick a calendar below.`))
+      .then((r) =>
+        flash(
+          `Connected${r.email ? ` as ${r.email}` : ""}.` +
+            (r.synced ? ` Added ${r.synced} missed booking${r.synced === 1 ? "" : "s"} to the calendar.` : "") +
+            " Pick a calendar below.",
+        ),
+      )
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't finish connecting."))
       .finally(async () => {
         window.history.replaceState({}, "", "/admin/integrations");
