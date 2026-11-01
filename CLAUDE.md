@@ -248,6 +248,21 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     from there; Safari in a tab has no Push API. `PushCard` (Settings) detects that and shows the
     three steps instead of a dead button.
 
+29. **Job mode (`/admin/job/$id`) — the on-site flow.** Start it from the job panel in the
+    calendar or the Appointments drawer. Five steps: Arrive (details, directions, an "On my way"
+    text prefilled for the customer, then "I'm here — start job" stamps `jobStartedAt`) → Before
+    photos → Checklist → After photos → Finish (tip presets, payment method, "Paid — finish").
+    The checklist is built live from the package's `features` + add-ons, bracketed by a
+    walk-around and a hand-over. Progress (`jobStep`, `jobChecklist`, start/finish) is saved on
+    the booking, so a reload or a closed app resumes on the same step with the same ticks
+    (verified). Finishing records payment via `updateBookingPayment` and then completes through
+    the existing `setBookingStatus`, so calendar sync, webhooks and emails behave exactly as from
+    Appointments. Owed = price − discount + tip − amountPaid, the same formula as payment links.
+
+    Push diagnostics (#28 follow-up): each device stores its last error (`lastError`), the
+    Settings card lists every device with its last result, and "Send a test" reports the push
+    service's exact reply. Bookings you make yourself only notify with "My own changes too" on.
+
 ## File map — everything added/changed this session
 
 ```

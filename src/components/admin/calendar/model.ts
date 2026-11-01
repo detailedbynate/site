@@ -173,7 +173,7 @@ export const PACKAGE_LEGEND = [
 ];
 
 /** Customer's car in one line, or "" if none was given. */
-export function vehicleLine(job: Job): string {
+export function vehicleLine(job: Pick<Job, "vehicle">): string {
   const v = job.vehicle;
   if (!v) return "";
   const car = [v.year, v.make, v.model].filter(Boolean).join(" ");

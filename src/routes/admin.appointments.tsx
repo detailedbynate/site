@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -15,6 +15,7 @@ import {
   StickyNote,
   Trash2,
   Pencil,
+  Play,
   Plus,
   Undo2,
   Upload,
@@ -317,6 +318,14 @@ function Appointments() {
         footer={
           open && (
             <div className="flex flex-wrap gap-2">
+              {open.status !== "cancelled" && (
+                <Link to="/admin/job/$id" params={{ id: open.id }}>
+                  <Button variant="primary">
+                    <Play className="h-3.5 w-3.5" />
+                    {open.status === "completed" ? "Job summary" : "Start job"}
+                  </Button>
+                </Link>
+              )}
               {/* Editing is available whatever the status — correcting the
                   record of a finished or cancelled job is just as valid as
                   changing an upcoming one. */}
