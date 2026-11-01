@@ -499,6 +499,12 @@ export const createBooking = createServerFn({ method: "POST" })
       .then(({ sendWebhook }) => sendWebhook("booking_created", booking))
       .catch(() => undefined);
 
+    // Buzz the owner's phone (Settings → Phone notifications). Same contract:
+    // fire and forget, never part of whether the booking succeeds.
+    void import("../push.server")
+      .then(({ notifyOwner }) => notifyOwner("booking_created", booking))
+      .catch(() => undefined);
+
     // `appliedCoupon` is reported back so the confirmation can say the code
     // landed — and, just as importantly, stay silent if it quietly didn't.
     return {

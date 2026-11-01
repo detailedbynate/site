@@ -50,7 +50,8 @@ function iconSvg(initial: string): string {
  * response could show yesterday's bookings as though they were today's.
  *
  * It exists because an installable PWA needs a registered worker with a fetch
- * handler — not because anything here should work offline. The only thing it
+ * handler, and because phone notifications arrive here (the push and
+ * notificationclick handlers) — not because anything should work offline. The only thing it
  * adds is an honest message when the phone has no connection, instead of the
  * browser's error page inside a standalone window with no address bar to
  * retry from.
@@ -60,6 +61,44 @@ function serviceWorker(): string {
 // Network-only by design — see src/lib/pwa.server.ts for why.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+
+// Phone notifications. Every push MUST show a notification: iOS revokes the
+// permission of a site that receives pushes silently.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "New activity", {
+      body: data.body || "",
+      icon: "/admin/icon",
+      badge: "/admin/icon",
+      tag: data.tag || undefined,
+      renotify: Boolean(data.tag),
+      data: { url: data.url || "/admin" },
+    }),
+  );
+});
+
+// Tapping one opens the admin on the right page — reusing an open window
+// rather than stacking a new one each time.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || "/admin", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      for (const w of windows) {
+        if (w.url.indexOf(self.location.origin + "/admin") === 0 && "focus" in w) {
+          return w.focus().then((f) => (f && "navigate" in f ? f.navigate(target) : f));
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
+});
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;

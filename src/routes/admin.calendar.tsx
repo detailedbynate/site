@@ -189,6 +189,14 @@ function CalendarPage() {
     const p = readPrefs();
     setViewState(p.view);
     setFitState(p.fit);
+    // A notification tap lands on /admin/calendar?date=YYYY-MM-DD: open that
+    // day, in Day view, and keep the late-loading settings from moving us.
+    const date = new URLSearchParams(window.location.search).get("date");
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      moved.current = true;
+      setAnchor(date);
+      setViewState("day");
+    }
   }, []);
   const save = (patch: Partial<{ view: View; fit: boolean }>) => {
     try {
