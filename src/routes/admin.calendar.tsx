@@ -13,6 +13,7 @@ import {
   MapPin,
   MessageSquare,
   Phone,
+  Play,
   Plus,
   SlidersHorizontal,
   Store,
@@ -1377,11 +1378,24 @@ function JobPanel({ job, onClose }: { job: Job | null; onClose: () => void }) {
       }
       title={job?.client?.name ?? "Booking"}
       footer={
-        <Link to="/admin/appointments" className="block">
-          <Button variant="primary" className="w-full">
-            Manage in Appointments
-          </Button>
-        </Link>
+        <div className="grid gap-2">
+          {/* Job mode: the on-site, step-by-step flow (admin.job.$id.tsx). */}
+          {job && job.status !== "cancelled" && (
+            <Link to="/admin/job/$id" params={{ id: job.id }} className="block">
+              <Button variant="primary" className="w-full py-3 text-[14px]">
+                <Play className="h-4 w-4" />
+                {job.status === "completed" || job.jobFinishedAt
+                  ? "Job summary"
+                  : job.jobStartedAt
+                    ? "Resume job"
+                    : "Start job"}
+              </Button>
+            </Link>
+          )}
+          <Link to="/admin/appointments" className="block">
+            <Button className="w-full">Manage in Appointments</Button>
+          </Link>
+        </div>
       }
     >
       {job && (

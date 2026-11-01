@@ -41,6 +41,7 @@ import { Route as AdminServicesRouteImport } from './routes/admin.services'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminTestimonialsRouteImport } from './routes/admin.testimonials'
 import { Route as ManageTokenRouteImport } from './routes/manage.$token'
+import { Route as AdminJobIdRouteImport } from './routes/admin.job.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -202,6 +203,11 @@ const ManageTokenRoute = ManageTokenRouteImport.update({
   path: '/manage/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminJobIdRoute = AdminJobIdRouteImport.update({
+  id: '/job/$id',
+  path: '/job/$id',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -236,6 +242,7 @@ export interface FileRoutesByFullPath {
   '/admin/testimonials': typeof AdminTestimonialsRoute
   '/manage/$token': typeof ManageTokenRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/job/$id': typeof AdminJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -269,6 +276,7 @@ export interface FileRoutesByTo {
   '/admin/testimonials': typeof AdminTestimonialsRoute
   '/manage/$token': typeof ManageTokenRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/job/$id': typeof AdminJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -304,6 +312,7 @@ export interface FileRoutesById {
   '/admin/testimonials': typeof AdminTestimonialsRoute
   '/manage/$token': typeof ManageTokenRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/job/$id': typeof AdminJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -340,6 +349,7 @@ export interface FileRouteTypes {
     | '/admin/testimonials'
     | '/manage/$token'
     | '/admin/'
+    | '/admin/job/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -373,6 +383,7 @@ export interface FileRouteTypes {
     | '/admin/testimonials'
     | '/manage/$token'
     | '/admin'
+    | '/admin/job/$id'
   id:
     | '__root__'
     | '/'
@@ -407,6 +418,7 @@ export interface FileRouteTypes {
     | '/admin/testimonials'
     | '/manage/$token'
     | '/admin/'
+    | '/admin/job/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -649,6 +661,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ManageTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/job/$id': {
+      id: '/admin/job/$id'
+      path: '/job/$id'
+      fullPath: '/admin/job/$id'
+      preLoaderRoute: typeof AdminJobIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
@@ -674,6 +693,7 @@ interface AdminRouteChildren {
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminTestimonialsRoute: typeof AdminTestimonialsRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminJobIdRoute: typeof AdminJobIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
@@ -698,6 +718,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSettingsRoute: AdminSettingsRoute,
   AdminTestimonialsRoute: AdminTestimonialsRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminJobIdRoute: AdminJobIdRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)

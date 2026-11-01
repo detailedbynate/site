@@ -139,15 +139,18 @@ export function QuickPhotoCapture({
 export function PhotoUploader({
   bookingId,
   refreshKey = 0,
+  defaultKind = "before",
 }: {
   bookingId: string;
   /** Bump to re-read photos after a quick capture. */
   refreshKey?: number;
+  /** Which tag new photos get first — Job mode's "after" step sets "after". */
+  defaultKind?: "before" | "after" | "other";
 }) {
   const [photos, setPhotos] = useState<Photo[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [kind, setKind] = useState<"before" | "after" | "other">("before");
+  const [kind, setKind] = useState<"before" | "after" | "other">(defaultKind);
   const [lightbox, setLightbox] = useState<Photo | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 

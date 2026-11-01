@@ -106,6 +106,11 @@ export interface Booking {
   agentId?: string;
   /** Which shop/zone it belongs to (see `locations`). */
   locationId?: string;
+  /** Job mode: when work started / finished, ticked checklist items, last step. */
+  jobStartedAt?: string;
+  jobFinishedAt?: string;
+  jobChecklist?: string[];
+  jobStep?: number;
   createdAt: string;
 }
 
@@ -1343,6 +1348,16 @@ const ADDED_COLUMNS: [table: string, column: string, ddl: string][] = [
   ["services", "materialCost", "REAL NOT NULL DEFAULT 0"],
   // Scheduled next-season price; swapped in on Settings.nextPriceDate.
   ["services", "nextPrice", "REAL"],
+  // Why the last push to a device failed (status + the push service's reason),
+  // shown on Settings → Phone notifications so a silent failure is visible.
+  ["pushSubscriptions", "lastError", "TEXT"],
+  ["pushSubscriptions", "lastErrorAt", "TEXT"],
+  // Job mode (/admin/job/$id): when work started and finished, the checklist
+  // items ticked off (JSON array), and which step it was left on.
+  ["bookings", "jobStartedAt", "TEXT"],
+  ["bookings", "jobFinishedAt", "TEXT"],
+  ["bookings", "jobChecklist", "TEXT"],
+  ["bookings", "jobStep", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 let db: DatabaseSync | null = null;
@@ -1810,6 +1825,10 @@ function toBooking(r: Row): Booking {
     cancelFeeLinkId: undef(r.cancelFeeLinkId),
     agentId: undef(r.agentId),
     locationId: undef(r.locationId),
+    jobStartedAt: undef(r.jobStartedAt),
+    jobFinishedAt: undef(r.jobFinishedAt),
+    jobChecklist: r.jobChecklist ? parseJSON<string[]>(r.jobChecklist, []) : undefined,
+    jobStep: typeof r.jobStep === "number" ? r.jobStep : 0,
     createdAt: r.createdAt,
   };
 }
@@ -2430,6 +2449,24 @@ export async function updateBookingCharges(
     );
     return toBooking(next);
   });
+}
+
+/**
+ * Save Job-mode progress. Only the fields given are written, so a checklist
+ * tick can never clear the start time, and nothing else on the booking moves.
+ */
+export async function saveJobProgress(
+  bookingId: string,
+  patch: { jobStartedAt?: string | null; jobFinishedAt?: string | null; jobChecklist?: string[]; jobStep?: number },
+): Promise<Booking | undefined> {
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+  if (patch.jobStartedAt !== undefined) (sets.push("jobStartedAt = ?"), vals.push(patch.jobStartedAt));
+  if (patch.jobFinishedAt !== undefined) (sets.push("jobFinishedAt = ?"), vals.push(patch.jobFinishedAt));
+  if (patch.jobChecklist !== undefined) (sets.push("jobChecklist = ?"), vals.push(JSON.stringify(patch.jobChecklist)));
+  if (patch.jobStep !== undefined) (sets.push("jobStep = ?"), vals.push(patch.jobStep));
+  if (sets.length) sql(`UPDATE bookings SET ${sets.join(", ")} WHERE id = ?`).run(...vals, bookingId);
+  return findBookingById(bookingId);
 }
 
 export async function updateBookingStatus(
@@ -3241,6 +3278,8 @@ export interface PushSubscriptionRow {
   label: string;
   createdAt: string;
   lastOkAt?: string;
+  lastError?: string;
+  lastErrorAt?: string;
 }
 
 export async function listPushSubscriptions(): Promise<PushSubscriptionRow[]> {
@@ -3252,6 +3291,8 @@ export async function listPushSubscriptions(): Promise<PushSubscriptionRow[]> {
     label: String(r.label ?? ""),
     createdAt: String(r.createdAt),
     lastOkAt: r.lastOkAt ? String(r.lastOkAt) : undefined,
+    lastError: r.lastError ? String(r.lastError) : undefined,
+    lastErrorAt: r.lastErrorAt ? String(r.lastErrorAt) : undefined,
   }));
 }
 
@@ -3270,7 +3311,18 @@ export async function deletePushSubscription(endpoint: string): Promise<void> {
 }
 
 export async function markPushDelivered(endpoint: string): Promise<void> {
-  sql("UPDATE pushSubscriptions SET lastOkAt = ? WHERE endpoint = ?").run(new Date().toISOString(), endpoint);
+  sql("UPDATE pushSubscriptions SET lastOkAt = ?, lastError = NULL, lastErrorAt = NULL WHERE endpoint = ?").run(
+    new Date().toISOString(),
+    endpoint,
+  );
+}
+
+export async function markPushFailed(endpoint: string, detail: string): Promise<void> {
+  sql("UPDATE pushSubscriptions SET lastError = ?, lastErrorAt = ? WHERE endpoint = ?").run(
+    detail.slice(0, 300),
+    new Date().toISOString(),
+    endpoint,
+  );
 }
 
 export async function getPushKeys(): Promise<{ publicKey: string; privateKey: string } | undefined> {

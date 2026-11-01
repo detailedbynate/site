@@ -209,6 +209,11 @@ export const setBookingStatus = createServerFn({ method: "POST" })
 
     // Notify any configured webhook of the state change, same fire-and-forget
     // contract — an unreachable endpoint must never block the status update.
+    if (booking && data.status === "cancelled") {
+      void import("../push.server")
+        .then(({ notifyOwner }) => notifyOwner("booking_cancelled", booking, "admin"))
+        .catch(() => undefined);
+    }
     if (booking && (data.status === "cancelled" || data.status === "completed")) {
       void import("../webhooks.server")
         .then(({ sendWebhook }) =>

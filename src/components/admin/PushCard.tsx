@@ -27,6 +27,11 @@ const EVENTS: { id: string; label: string; hint: string }[] = [
   { id: "booking_created", label: "New bookings", hint: "Who, which package, when and the price." },
   { id: "booking_cancelled", label: "Cancellations", hint: "When a customer cancels from their link." },
   { id: "booking_rescheduled", label: "Reschedules", hint: "With the new day and time." },
+  {
+    id: "own_changes",
+    label: "My own changes too",
+    hint: "Also buzz for bookings and cancellations you make yourself in the admin.",
+  },
 ];
 
 function detectSupport(): Support {
@@ -142,18 +147,24 @@ export function PushCard() {
   const test = () =>
     run("test", async () => {
       await sendTestPush({ data: { endpoint: endpoint! } });
-      flash("Sent — it should appear in a few seconds.");
+      await load();
+      flash(
+        "Apple/Google accepted it — it should appear within a few seconds. If it doesn't, check Focus / Do Not Disturb and Settings → Notifications for this app.",
+      );
     });
 
   const toggleEvent = (id: string, on: boolean) =>
     run(`ev-${id}`, async () => {
       const events = on ? [...new Set([...(status?.events ?? []), id])] : (status?.events ?? []).filter((e) => e !== id);
       setStatus((s) => (s ? { ...s, events } : s));
-      await savePushEvents({ data: { events: events as ("booking_created" | "booking_cancelled" | "booking_rescheduled")[] } });
+      await savePushEvents({
+        data: {
+          events: events as ("booking_created" | "booking_cancelled" | "booking_rescheduled" | "own_changes")[],
+        },
+      });
     });
 
   const on = Boolean(status?.thisDevice && permission === "granted");
-  const others = (status?.devices.length ?? 0) - (status?.thisDevice ? 1 : 0);
 
   return (
     <GlassCard index={1} className="p-6">
@@ -167,7 +178,8 @@ export function PushCard() {
         )}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        A buzz on your lock screen the moment a customer books, cancels or moves a job.
+        A buzz on your lock screen the moment a customer books, cancels or moves a job online.
+        Bookings you make yourself in the admin don't notify unless you turn on "My own changes too".
       </p>
 
       <AnimatePresence>
@@ -242,10 +254,32 @@ export function PushCard() {
             ))}
           </div>
 
-          {others > 0 && (
-            <p className="text-[11.5px] text-muted-foreground">
-              Also on for {others} other device{others === 1 ? "" : "s"}.
-            </p>
+          {/* Every registered device and how its last delivery went — so a
+              failure says what happened instead of looking like silence. */}
+          {status.devices.length > 0 && (
+            <div className="space-y-2 border-t border-[var(--line-1)] pt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Devices ({status.devices.length})
+              </p>
+              {status.devices.map((d, i) => (
+                <div key={i} className="rounded-xl border border-[var(--line-2)] bg-[var(--fill-1)] px-3 py-2.5">
+                  <p className="flex items-center gap-2 text-[12.5px] font-semibold text-foreground">
+                    <span
+                      className={`h-2 w-2 rounded-full ${d.lastError ? "bg-amber-400" : d.lastOkAt ? "bg-emerald-500" : "bg-[var(--fill-3)]"}`}
+                    />
+                    {d.label || "Device"}
+                    {d.isThis && <span className="font-normal text-muted-foreground">· this device</span>}
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                    {d.lastError
+                      ? `Last attempt failed ${new Date(d.lastErrorAt!).toLocaleString()}: ${d.lastError}`
+                      : d.lastOkAt
+                        ? `Last delivered ${new Date(d.lastOkAt).toLocaleString()}`
+                        : `Added ${new Date(d.createdAt).toLocaleDateString()} · nothing sent yet`}
+                  </p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

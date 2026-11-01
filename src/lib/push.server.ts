@@ -137,13 +137,17 @@ export interface PushMessage {
 
 type Target = { endpoint: string; p256dh: string; auth: string };
 
+export type Delivery = { result: "ok" | "gone" | "failed"; detail: string };
+
 /**
- * Deliver to one device. Returns "gone" when the push service says the
- * subscription no longer exists (app removed, permission revoked) so the
- * caller can forget it.
+ * Deliver to one device. "gone" means the push service says the subscription
+ * no longer exists (app removed, permission revoked) so the caller can forget
+ * it. `detail` carries the push service's own reason on failure — Apple
+ * answers e.g. 403 {"reason":"BadJwtToken"} — which used to go only to the
+ * server log, so a failure looked exactly like nothing happening.
  */
-async function deliver(target: Target, message: PushMessage, subject: string): Promise<"ok" | "gone" | "failed"> {
-  if (!isAllowedEndpoint(target.endpoint)) return "gone";
+async function deliver(target: Target, message: PushMessage, subject: string): Promise<Delivery> {
+  if (!isAllowedEndpoint(target.endpoint)) return { result: "gone", detail: "Unsupported push service" };
   const keys = await vapidKeys();
   const body = encryptPayload(Buffer.from(JSON.stringify(message)), target.p256dh, target.auth);
   try {
@@ -159,64 +163,78 @@ async function deliver(target: Target, message: PushMessage, subject: string): P
       body: new Uint8Array(body),
       signal: AbortSignal.timeout(8000),
     });
-    if (res.status === 404 || res.status === 410) return "gone";
+    const text = res.ok ? "" : (await res.text().catch(() => "")).trim().slice(0, 200);
+    if (res.status === 404 || res.status === 410) return { result: "gone", detail: `${res.status} ${text}`.trim() };
     if (!res.ok) {
-      console.error("Push rejected:", res.status, await res.text().catch(() => ""));
-      return "failed";
+      console.error("Push rejected:", res.status, text);
+      return { result: "failed", detail: `${res.status} ${text || res.statusText}`.trim() };
     }
-    return "ok";
+    return { result: "ok", detail: String(res.status) };
   } catch (err) {
     console.error("Push failed:", err);
-    return "failed";
+    return { result: "failed", detail: err instanceof Error ? err.message : "Network error" };
   }
 }
 
 async function subjectFor(): Promise<string> {
   const { getSettings } = await import("./db.server");
   const s = await getSettings();
-  // Apple rejects VAPID tokens without a usable contact, and specifically
-  // refuses localhost URLs; a mailto is always accepted.
-  if (s.contactEmail) return `mailto:${s.contactEmail}`;
-  if (/^https:\/\//.test(s.siteUrl || "")) return s.siteUrl;
-  return "mailto:admin@example.com";
+  // Apple rejects VAPID tokens without a usable contact — and a mailto with
+  // stray whitespace, and localhost URLs. A trimmed mailto is always accepted.
+  const email = (s.contactEmail || "").trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return `mailto:${email}`;
+  const site = (s.siteUrl || "").trim();
+  if (/^https:\/\/[^/]+/.test(site) && !/localhost|127\.0\.0\.1/.test(site)) return site.replace(/\/+$/, "");
+  return "mailto:owner@detailedbynate.com";
+}
+
+/** Record how a delivery went against the device, forgetting gone ones. */
+async function settle(endpoint: string, d: Delivery): Promise<void> {
+  const { deletePushSubscription, markPushDelivered, markPushFailed } = await import("./db.server");
+  if (d.result === "ok") await markPushDelivered(endpoint);
+  else if (d.result === "gone") await deletePushSubscription(endpoint);
+  else await markPushFailed(endpoint, d.detail);
 }
 
 /** Send to every registered device; forget the ones that are gone. */
 export async function sendToAll(message: PushMessage): Promise<{ sent: number; failed: number }> {
-  const { listPushSubscriptions, deletePushSubscription, markPushDelivered } = await import("./db.server");
+  const { listPushSubscriptions } = await import("./db.server");
   const subs = await listPushSubscriptions();
   if (!subs.length) return { sent: 0, failed: 0 };
   const subject = await subjectFor();
   const results = await Promise.all(subs.map((s) => deliver(s, message, subject)));
-  let sent = 0;
-  let failed = 0;
-  await Promise.all(
-    results.map(async (r, i) => {
-      if (r === "ok") {
-        sent++;
-        await markPushDelivered(subs[i]!.endpoint);
-      } else if (r === "gone") await deletePushSubscription(subs[i]!.endpoint);
-      else failed++;
-    }),
-  );
-  return { sent, failed };
+  await Promise.all(results.map((d, i) => settle(subs[i]!.endpoint, d)));
+  return {
+    sent: results.filter((d) => d.result === "ok").length,
+    failed: results.filter((d) => d.result === "failed").length,
+  };
 }
 
-export async function sendToOne(target: Target, message: PushMessage): Promise<"ok" | "gone" | "failed"> {
-  return deliver(target, message, await subjectFor());
+export async function sendToOne(target: Target, message: PushMessage): Promise<Delivery> {
+  const d = await deliver(target, message, await subjectFor());
+  await settle(target.endpoint, d);
+  return d;
 }
 
 export type PushEvent = "booking_created" | "booking_cancelled" | "booking_rescheduled";
+/** Who caused it. Your own changes in the admin only notify if you opted in. */
+export type PushSource = "customer" | "admin";
 
 /**
  * Tell the owner's phone about a booking event, if they asked for that kind.
  * Never throws — callers fire this and move on.
  */
-export async function notifyOwner(event: PushEvent, booking: Booking): Promise<void> {
+export async function notifyOwner(
+  event: PushEvent,
+  booking: Booking,
+  source: PushSource = "customer",
+): Promise<void> {
   try {
     const { getSettings, findClientById } = await import("./db.server");
     const settings = await getSettings();
-    if (!(settings.pushEvents ?? []).includes(event)) return;
+    const events = settings.pushEvents ?? [];
+    if (!events.includes(event)) return;
+    if (source === "admin" && !events.includes("own_changes")) return;
 
     const client = booking.clientId ? await findClientById(booking.clientId) : undefined;
     const name = client?.name ?? "A customer";

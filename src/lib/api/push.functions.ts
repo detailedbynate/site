@@ -8,7 +8,7 @@ import { z } from "zod";
 // browser bundle.
 // --------------------------------------------------------------------------
 
-const EVENTS = ["booking_created", "booking_cancelled", "booking_rescheduled"] as const;
+const EVENTS = ["booking_created", "booking_cancelled", "booking_rescheduled", "own_changes"] as const;
 
 /** What the Settings card needs: the public key, this device's state, the toggles. */
 export const getPushStatus = createServerFn({ method: "POST" })
@@ -22,7 +22,14 @@ export const getPushStatus = createServerFn({ method: "POST" })
     return {
       publicKey: keys.publicKey,
       thisDevice: Boolean(data.endpoint && subs.some((s) => s.endpoint === data.endpoint)),
-      devices: subs.map((s) => ({ label: s.label, createdAt: s.createdAt, lastOkAt: s.lastOkAt ?? null })),
+      devices: subs.map((s) => ({
+        label: s.label,
+        createdAt: s.createdAt,
+        lastOkAt: s.lastOkAt ?? null,
+        lastError: s.lastError ?? null,
+        lastErrorAt: s.lastErrorAt ?? null,
+        isThis: s.endpoint === data.endpoint,
+      })),
       events: settings.pushEvents ?? [],
     };
   });
@@ -69,7 +76,7 @@ export const sendTestPush = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireUser } = await import("../auth.server");
     await requireUser();
-    const { listPushSubscriptions, deletePushSubscription, markPushDelivered } = await import("../db.server");
+    const { listPushSubscriptions } = await import("../db.server");
     const sub = (await listPushSubscriptions()).find((s) => s.endpoint === data.endpoint);
     if (!sub) throw new Error("This device isn't registered. Turn notifications on first.");
     const { sendToOne } = await import("../push.server");
@@ -79,13 +86,16 @@ export const sendTestPush = createServerFn({ method: "POST" })
       url: "/admin/calendar",
       tag: "test",
     });
-    if (result === "gone") {
-      await deletePushSubscription(sub.endpoint);
-      throw new Error("This device's subscription expired. Turn notifications on again.");
+    if (result.result === "gone") {
+      throw new Error(`This device's subscription has expired (${result.detail}). Turn notifications on again.`);
     }
-    if (result === "failed") throw new Error("The push service didn't accept the message. Try again in a moment.");
-    await markPushDelivered(sub.endpoint);
-    return { ok: true };
+    if (result.result === "failed") {
+      // Say exactly what the push service answered — that is what turns
+      // "it doesn't work" into something fixable.
+      const host = new URL(sub.endpoint).hostname;
+      throw new Error(`${host} refused the message: ${result.detail}`);
+    }
+    return { ok: true, detail: result.detail };
   });
 
 export const savePushEvents = createServerFn({ method: "POST" })

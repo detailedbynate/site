@@ -413,6 +413,10 @@ export const createAppointment = createServerFn({ method: "POST" })
     void import("../webhooks.server")
       .then(({ sendWebhook }) => sendWebhook("booking_created", booking))
       .catch(() => undefined);
+    // Only buzzes if "My own changes" is on — you already know you made it.
+    void import("../push.server")
+      .then(({ notifyOwner }) => notifyOwner("booking_created", booking, "admin"))
+      .catch(() => undefined);
 
     return { booking };
   });
