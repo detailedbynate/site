@@ -216,6 +216,16 @@ function Integrations() {
               </p>
             </div>
 
+            {/* Shown here too, not only in the first-time steps: reconnecting
+                after a domain change fails with redirect_uri_mismatch, and
+                this is the exact value Google needs to have on file. */}
+            <Field
+              label="Redirect URI"
+              hint="Reconnecting fails with redirect_uri_mismatch unless this exact address is listed under Authorised redirect URIs on your Google OAuth client."
+            >
+              <CopyRow value={g.redirectUri} />
+            </Field>
+
             <Field
               label="Calendar to sync with"
               hint="Bookings are written here, and this calendar's busy times block your availability."
