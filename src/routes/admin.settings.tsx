@@ -8,6 +8,7 @@ import { TeamCard } from "@/components/admin/TeamCard";
 import { ScheduleCard } from "@/components/admin/ScheduleCard";
 import { AvailabilityRangesCard } from "@/components/admin/AvailabilityRangesCard";
 import { PolicyCard } from "@/components/admin/PolicyCard";
+import { PushCard } from "@/components/admin/PushCard";
 import { changePassword, getMe, updateProfile } from "@/lib/api/auth.functions";
 import { AvatarPicker } from "@/components/admin/AvatarPicker";
 import {
@@ -201,6 +202,7 @@ function SettingsPage() {
           </div>
         </GlassCard>
 
+        <PushCard />
         <ScheduleCard />
         <AvailabilityRangesCard />
 

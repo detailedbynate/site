@@ -226,6 +226,23 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     `MotionConfig reducedMotion="user"` wraps the admin, and `.admin-theme` sets
     `touch-action: manipulation` so taps respond instantly. Ambient drift is off on phones.
 
+28. **Phone notifications are real Web Push, built on node:crypto.** `src/lib/push.server.ts`
+    implements RFC 8291 (aes128gcm payload encryption) and RFC 8292 (VAPID) directly, like Stripe
+    over `fetch` — no `web-push` package, because the repo carries both npm and bun lockfiles and
+    a new dependency must be added to both or the deploy breaks. The encryption is verified
+    byte-for-byte against RFC 8291's Appendix A vector; Google's push service accepts the VAPID
+    header (a fake device gets 410, a bad key gets 403). The VAPID key pair is generated on first
+    use into its own `pushKeys` table — NOT a settings row, because `getAdminSettings` ships the
+    whole settings object to the browser. Devices live in `pushSubscriptions`; a 404/410 from the
+    push service deletes the row. Endpoints are allow-listed to the real push services so an admin
+    session can't make the server POST anywhere. Sent (fire-and-forget, like webhooks) on a new
+    booking, a customer cancelling, and a customer rescheduling; which ones is `settings.pushEvents`.
+    The admin's service worker (`pwa.server.ts`) shows every push — iOS revokes permission from a
+    site that receives pushes silently — and a tap opens `/admin/calendar?date=…` on that day.
+    **iPhone requirement:** iOS 16.4+, and the admin must be added to the Home Screen and opened
+    from there; Safari in a tab has no Push API. `PushCard` (Settings) detects that and shows the
+    three steps instead of a dead button.
+
 ## File map — everything added/changed this session
 
 ```

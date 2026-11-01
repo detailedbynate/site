@@ -212,6 +212,15 @@ export const rescheduleOwnBooking = createServerFn({ method: "POST" })
     const { syncBookingToCalendar } = await import("../calendar-sync.server");
     await syncBookingToCalendar(booking.id);
 
+    // The owner hears about it at once, with the new day and time.
+    void import("../push.server")
+      .then(async ({ notifyOwner }) => {
+        const { findBookingById } = await import("../db.server");
+        const moved = await findBookingById(booking.id);
+        if (moved) await notifyOwner("booking_rescheduled", moved);
+      })
+      .catch(() => undefined);
+
     // Re-send the confirmation rather than inventing a "rescheduled" trigger:
     // the customer needs the new date and time, which is exactly what the
     // confirmation says, and it keeps the templates the owner edits to one.
@@ -315,6 +324,9 @@ export const cancelOwnBooking = createServerFn({ method: "POST" })
     if (updated) {
       void import("../webhooks.server")
         .then(({ sendWebhook }) => sendWebhook("booking_cancelled", updated))
+        .catch(() => undefined);
+      void import("../push.server")
+        .then(({ notifyOwner }) => notifyOwner("booking_cancelled", updated))
         .catch(() => undefined);
       void import("../email.server")
         .then(({ runTriggerAndCustom }) => runTriggerAndCustom("booking_cancelled", updated))

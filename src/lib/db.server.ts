@@ -398,6 +398,8 @@ export interface Settings {
   webhookUrl: string;
   webhookSecret: string;
   webhookEvents: string[];
+  /** Which booking events buzz the owner's phone (Settings → Phone notifications). */
+  pushEvents: string[];
 }
 
 export interface Photo {
@@ -741,6 +743,7 @@ Notes: {{notes}}`,
   webhookUrl: "",
   webhookSecret: "",
   webhookEvents: ["booking_created", "booking_cancelled", "booking_completed"],
+  pushEvents: ["booking_created", "booking_cancelled", "booking_rescheduled"],
 };
 
 /**
@@ -1275,6 +1278,27 @@ CREATE TABLE IF NOT EXISTS timeOff (
 );
 
 CREATE INDEX IF NOT EXISTS idx_timeoff_range ON timeOff(startDate, endDate);
+
+-- Phone notifications (Web Push). One row per device the owner turned them on
+-- for; the endpoint is the push service's address for that device.
+CREATE TABLE IF NOT EXISTS pushSubscriptions (
+  endpoint  TEXT PRIMARY KEY,
+  p256dh    TEXT NOT NULL,
+  auth      TEXT NOT NULL,
+  userId    TEXT,
+  label     TEXT NOT NULL DEFAULT '',
+  createdAt TEXT NOT NULL,
+  lastOkAt  TEXT
+);
+
+-- The server's own VAPID key pair, generated on first use. Its own table, not
+-- a settings row, because the whole settings object is sent to the admin UI
+-- and a private key has no business in a browser.
+CREATE TABLE IF NOT EXISTS pushKeys (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  publicKey  TEXT NOT NULL,
+  privateKey TEXT NOT NULL
+);
 
 CREATE INDEX IF NOT EXISTS idx_expenses_date    ON expenses(date DESC);
 CREATE INDEX IF NOT EXISTS idx_expenses_type    ON expenses(type);
@@ -3205,6 +3229,61 @@ function toTimeOff(r: Row): TimeOff {
     reason: String(r.reason ?? ""),
     createdAt: String(r.createdAt),
   };
+}
+
+// ------------------------- Phone notifications --------------------------
+
+export interface PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  userId?: string;
+  label: string;
+  createdAt: string;
+  lastOkAt?: string;
+}
+
+export async function listPushSubscriptions(): Promise<PushSubscriptionRow[]> {
+  return (sql("SELECT * FROM pushSubscriptions ORDER BY createdAt ASC").all() as Row[]).map((r) => ({
+    endpoint: String(r.endpoint),
+    p256dh: String(r.p256dh),
+    auth: String(r.auth),
+    userId: r.userId ? String(r.userId) : undefined,
+    label: String(r.label ?? ""),
+    createdAt: String(r.createdAt),
+    lastOkAt: r.lastOkAt ? String(r.lastOkAt) : undefined,
+  }));
+}
+
+/** Insert or refresh a device. Re-subscribing the same phone just updates it. */
+export async function savePushSubscription(row: Omit<PushSubscriptionRow, "createdAt">): Promise<void> {
+  sql(
+    `INSERT INTO pushSubscriptions (endpoint, p256dh, auth, userId, label, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
+       userId = excluded.userId, label = excluded.label`,
+  ).run(row.endpoint, row.p256dh, row.auth, row.userId ?? null, row.label, new Date().toISOString());
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  sql("DELETE FROM pushSubscriptions WHERE endpoint = ?").run(endpoint);
+}
+
+export async function markPushDelivered(endpoint: string): Promise<void> {
+  sql("UPDATE pushSubscriptions SET lastOkAt = ? WHERE endpoint = ?").run(new Date().toISOString(), endpoint);
+}
+
+export async function getPushKeys(): Promise<{ publicKey: string; privateKey: string } | undefined> {
+  const r = sql("SELECT publicKey, privateKey FROM pushKeys WHERE id = 1").get() as Row | undefined;
+  return r ? { publicKey: String(r.publicKey), privateKey: String(r.privateKey) } : undefined;
+}
+
+/** First writer wins, so two requests racing on first use agree on one pair. */
+export async function savePushKeysIfAbsent(keys: { publicKey: string; privateKey: string }): Promise<void> {
+  sql("INSERT OR IGNORE INTO pushKeys (id, publicKey, privateKey) VALUES (1, ?, ?)").run(
+    keys.publicKey,
+    keys.privateKey,
+  );
 }
 
 export async function listTimeOff(): Promise<TimeOff[]> {
