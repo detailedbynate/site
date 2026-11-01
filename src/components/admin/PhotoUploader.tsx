@@ -294,7 +294,7 @@ export function PhotoUploader({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setLightbox(null)}
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm"
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-6"
           >
             <motion.div
               initial={{ scale: 0.94 }}

@@ -61,9 +61,11 @@ type Catalog = {
 const STEPS = ["Service", "Add-ons", "Location", "Date & time", "Your info", "Review"];
 
 const pageVariants = {
-  enter: (dir: number) => ({ opacity: 0, x: dir > 0 ? 48 : -48, filter: "blur(8px)" }),
-  center: { opacity: 1, x: 0, filter: "blur(0px)" },
-  exit: (dir: number) => ({ opacity: 0, x: dir > 0 ? -48 : 48, filter: "blur(8px)" }),
+  // Transform + opacity only: a blur filter on a whole wizard step forced a
+  // full repaint every frame of the transition, which is where phones stuttered.
+  enter: (dir: number) => ({ opacity: 0, x: dir > 0 ? 48 : -48 }),
+  center: { opacity: 1, x: 0 },
+  exit: (dir: number) => ({ opacity: 0, x: dir > 0 ? -48 : 48 }),
 };
 
 const listItem = {

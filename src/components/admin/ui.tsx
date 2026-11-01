@@ -442,13 +442,16 @@ export function DetailPanel({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[3px]"
+            className="fixed inset-0 z-40 bg-black/55"
           />
           <motion.aside
-            initial={{ x: 460 }}
+            initial={{ x: "100%" }}
             animate={{ x: 0 }}
-            exit={{ x: 460 }}
-            transition={{ type: "spring", stiffness: 320, damping: 36 }}
+            exit={{ x: "100%" }}
+            // Stiffer and fully damped: it lands in ~250ms with no wobble,
+            // which is what makes it feel instant rather than floaty.
+            transition={{ type: "spring", stiffness: 520, damping: 46, mass: 0.8 }}
+            style={{ willChange: "transform" }}
             role="dialog"
             aria-modal="true"
             className="admin-theme fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col border-l border-[var(--line-2)] bg-[var(--background)]"

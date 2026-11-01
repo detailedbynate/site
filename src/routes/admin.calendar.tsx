@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { motion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { AnimatePresence, motion, type PanInfo } from "motion/react";
 import {
   Ban,
   Car,
@@ -38,11 +38,12 @@ import {
 } from "@/components/admin/ui";
 import { NewAppointmentDialog } from "@/components/admin/NewAppointmentDialog";
 import { Timeline } from "@/components/admin/calendar/Timeline";
+import { DayColumn } from "@/components/admin/calendar/DayColumn";
 import {
   PACKAGE_LEGEND,
   addDays,
   clock,
-  contentsFor,
+  buildContents,
   duration,
   fmt,
   jobColor,
@@ -127,7 +128,30 @@ function freeGaps(day: DayContents | undefined, s: Hours | undefined): [number, 
   return gaps.filter(([a, b]) => b - a >= 60);
 }
 
+/**
+ * Phone-sized screen? Phones get vertical layouts (time running down, like
+ * Jobber and Square Appointments); wider screens get the horizontal timeline.
+ * Rendering one or the other — not both hidden by CSS — keeps the page half
+ * the size. The calendar only renders after its data loads client-side, so
+ * reading matchMedia during render never meets the server.
+ */
+function useIsPhone(): boolean {
+  const query = "(max-width: 767px)";
+  const [phone, setPhone] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setPhone(m.matches);
+    on();
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return phone;
+}
+
 function CalendarPage() {
+  const phone = useIsPhone();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +170,19 @@ function CalendarPage() {
   const [openJob, setOpenJob] = useState<Job | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Which way the content slides: +1 forward in time, -1 back, 0 for a
+  // change of view (a plain crossfade). Swapping a day used to blink the whole
+  // body out and in; sliding in the direction you moved is what makes
+  // stepping through days read as one continuous strip.
+  const [dir, setDir] = useState<1 | -1 | 0>(0);
+  // Once you have navigated, the late-arriving settings must not yank you
+  // back to today (they used to, if you tapped Next in the first second).
+  const moved = useRef(false);
+  const goTo = (date: string) => {
+    moved.current = true;
+    setDir(date === anchor ? 0 : date > anchor ? 1 : -1);
+    setAnchor(date);
+  };
 
   // Restored after mount: localStorage doesn't exist during SSR.
   useEffect(() => {
@@ -161,6 +198,7 @@ function CalendarPage() {
     }
   };
   const setView = (v: View) => {
+    setDir(0);
     setViewState(v);
     save({ view: v });
   };
@@ -177,7 +215,7 @@ function CalendarPage() {
     return () => clearInterval(t);
   }, [timeZone]);
   useEffect(() => {
-    if (settings) setAnchor(nowInZone(settings.timezone || "America/Toronto").date);
+    if (settings && !moved.current) setAnchor(nowInZone(settings.timezone || "America/Toronto").date);
   }, [settings]);
 
   const loadTimeOff = useCallback(() => {
@@ -217,14 +255,13 @@ function CalendarPage() {
     };
   }, [span]);
 
-  const contents = useMemo(() => {
-    const map = new Map<string, DayContents>();
-    if (!jobs) return map;
-    for (const d of new Set([...week, ...grid])) {
-      map.set(d, contentsFor(d, jobs, gcal.events, timeOff, timeZone));
-    }
-    return map;
-  }, [jobs, gcal.events, timeOff, timeZone, week, grid]);
+  const contents = useMemo(
+    () =>
+      jobs
+        ? buildContents(new Set([...week, ...grid]), jobs, gcal.events, timeOff, timeZone)
+        : new Map<string, DayContents>(),
+    [jobs, gcal.events, timeOff, timeZone, week, grid],
+  );
 
   const schedules = useMemo(() => {
     const map = new Map<string, Hours | undefined>();
@@ -232,14 +269,20 @@ function CalendarPage() {
     return map;
   }, [week, grid, settings]);
 
-  const step = (dir: 1 | -1) => {
-    if (view === "day") setAnchor(addDays(anchor, dir));
-    else if (view === "week") setAnchor(addDays(anchor, 7 * dir));
+  const step = (by: 1 | -1) => {
+    if (view === "day") goTo(addDays(anchor, by));
+    else if (view === "week") goTo(addDays(anchor, 7 * by));
     else {
       const d = new Date(`${anchor.slice(0, 7)}-01T12:00:00`);
-      d.setMonth(d.getMonth() + dir);
-      setAnchor(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
+      d.setMonth(d.getMonth() + by);
+      goTo(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
     }
+  };
+
+  /** Swipe the header sideways on a phone to step, like turning a page. */
+  const onSwipe = (_: unknown, info: PanInfo) => {
+    const { x, y } = info.offset;
+    if (Math.abs(x) > 56 && Math.abs(x) > Math.abs(y) * 1.4) step(x < 0 ? 1 : -1);
   };
 
   const blockDay = async (date: string) => {
@@ -264,7 +307,12 @@ function CalendarPage() {
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!jobs) return <Spinner label="Loading calendar…" />;
 
-  const isTodayView = view === "day" && anchor === now.date;
+  const showingToday =
+    view === "day"
+      ? anchor === now.date
+      : view === "week"
+        ? week.includes(now.date)
+        : anchor.slice(0, 7) === now.date.slice(0, 7);
   const eyebrow =
     view === "day"
       ? anchor === now.date
@@ -285,7 +333,9 @@ function CalendarPage() {
           anchor,
           anchor === now.date
             ? { weekday: "long", month: "short", day: "numeric" }
-            : { month: "long", day: "numeric" },
+            : // Short month: the weekday is already in the eyebrow above, and
+              // "November 3" next to the Today button got cut off on phones.
+              { month: "short", day: "numeric" },
         )
       : view === "week"
         ? `${fmt(week[0], { month: "short", day: "numeric" })} – ${fmt(week[6], {
@@ -296,9 +346,6 @@ function CalendarPage() {
 
   const day = filterDay(contents.get(anchor), filter);
   const sched = schedules.get(anchor);
-  const workHours = sched?.open
-    ? `${clock(sched.openHour * 60)} – ${clock(sched.closeHour * 60)}`
-    : "Closed";
 
   /** Hours on the axis: your working day when "fit" is on, otherwise 6 AM – 10 PM. */
   const axis = (scheds: (Hours | undefined)[], items: TimedItem[]): [number, number] => {
@@ -315,7 +362,11 @@ function CalendarPage() {
         className="cal-stage -mx-2 sm:mx-0"
       >
         {/* ------------------------------- head ------------------------------- */}
-        <div className="cal-stage-head relative px-4 pb-6 pt-5 sm:px-7 sm:pt-7">
+        <motion.div
+          onPanEnd={onSwipe}
+          style={{ touchAction: "pan-y" }}
+          className="cal-stage-head relative px-4 pb-6 pt-5 sm:px-7 sm:pt-7"
+        >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[13px] font-medium text-[var(--st-ink-soft)]">{eyebrow}</p>
@@ -324,6 +375,23 @@ function CalendarPage() {
               </h1>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {/* Only when you have wandered off — otherwise it is noise. */}
+              <AnimatePresence initial={false}>
+                {!showingToday && (
+                  <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.85 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => goTo(now.date)}
+                    className="cal-frost h-11 rounded-full px-4 text-[13px] font-semibold"
+                  >
+                    Today
+                  </motion.button>
+                )}
+              </AnimatePresence>
               <RoundButton label="Previous" onClick={() => step(-1)}>
                 <ChevronLeft className="h-[18px] w-[18px]" />
               </RoundButton>
@@ -333,41 +401,40 @@ function CalendarPage() {
             </div>
           </div>
 
-          {/* Today / Day / Week / Month */}
-          <div className="cal-frost mt-5 grid grid-cols-4 rounded-full p-1">
+          {/* Day / Week / Month */}
+          <div role="tablist" className="cal-frost mt-5 grid grid-cols-3 rounded-full p-1">
             {(
               [
-                { key: "today", label: "Today", active: isTodayView },
-                { key: "day", label: "Day", active: view === "day" && !isTodayView },
-                { key: "week", label: "Week", active: view === "week" },
-                { key: "month", label: "Month", active: view === "month" },
+                ["day", "Day"],
+                ["week", "Week"],
+                ["month", "Month"],
               ] as const
-            ).map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={t.active}
-                onClick={() => {
-                  if (t.key === "today") {
-                    setAnchor(now.date);
-                    setView("day");
-                  } else setView(t.key);
-                }}
-                className="relative rounded-full py-2.5 text-[13.5px] font-medium transition-colors"
-              >
-                {t.active && (
-                  <motion.span
-                    layoutId="cal-seg"
-                    className="cal-frost-active absolute inset-0 rounded-full"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-                <span className={`relative ${t.active ? "text-[var(--background)]" : "opacity-75"}`}>
-                  {t.label}
-                </span>
-              </button>
-            ))}
+            ).map(([v, label]) => {
+              const active = view === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setView(v)}
+                  className="relative rounded-full py-2.5 text-[13.5px] font-medium"
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="cal-seg"
+                      className="cal-frost-active absolute inset-0 rounded-full"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span
+                    className={`relative transition-opacity duration-200 ${active ? "text-[var(--background)]" : "opacity-70 hover:opacity-100"}`}
+                  >
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {view !== "month" && (
@@ -378,38 +445,43 @@ function CalendarPage() {
               contents={contents}
               schedules={schedules}
               onPick={(d) => {
-                setAnchor(d);
-                setView("day");
+                goTo(d);
+                if (view !== "day") setViewState("day");
               }}
             />
           )}
 
-          {/* Working hours + filter */}
+          {/* Hours shown + filter */}
           <div className="mt-4 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-2.5">
-            <div className="cal-frost flex items-center gap-2.5 rounded-full py-1.5 pl-3 pr-1.5">
-              <Clock className="h-4 w-4 shrink-0 opacity-80" />
-              <div className="min-w-0 flex-1 leading-tight">
-                <p className="text-[10.5px] opacity-70">Working hours</p>
-                <p className="tnum truncate text-[12px] font-medium">
-                  {view === "day" ? workHours : "Fit to hours"}
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={fit}
-                aria-label="Fit timeline to working hours"
-                onClick={() => setFit(!fit)}
-                className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                  fit ? "bg-primary" : "bg-[var(--fill-3)]"
-                }`}
-              >
-                <motion.span
-                  layout
-                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow ${fit ? "right-1" : "left-1"}`}
-                />
-              </button>
+            {/* Said in words, not a bare switch: what the timeline shows. */}
+            <div className="cal-frost flex items-center gap-1 rounded-full p-1" role="radiogroup" aria-label="Hours shown">
+              <Clock className="ml-2 mr-1 h-4 w-4 shrink-0 opacity-70" />
+              {(
+                [
+                  [true, "Work hours"],
+                  [false, "Full day"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={fit === value}
+                  onClick={() => setFit(value)}
+                  className="relative flex-1 whitespace-nowrap rounded-full px-2 py-2 text-[12.5px] font-medium"
+                >
+                  {fit === value && (
+                    <motion.span
+                      layoutId="cal-hours"
+                      className="cal-frost-active absolute inset-0 rounded-full"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+                  <span className={`relative ${fit === value ? "text-[var(--background)]" : "opacity-70"}`}>
+                    {label}
+                  </span>
+                </button>
+              ))}
             </div>
             <label className="cal-frost relative flex items-center gap-2 rounded-full px-3.5">
               <select
@@ -426,18 +498,29 @@ function CalendarPage() {
               <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 opacity-70" />
             </label>
           </div>
-        </div>
+        </motion.div>
 
         {/* ------------------------------- body ------------------------------- */}
-        <motion.div
-          key={`${view}-${view === "month" ? anchor.slice(0, 7) : view === "week" ? week[0] : anchor}`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-          className="cal-stage-body relative px-4 pb-5 pt-5 sm:px-7 sm:pb-7"
-        >
+        <div className="cal-stage-body relative px-4 pb-5 pt-5 sm:px-7 sm:pb-7">
+          {/*
+            popLayout: the outgoing view is lifted out of the flow while it
+            slides away, so the incoming one takes its place immediately. No
+            empty frame and no height collapse between them — the two halves
+            of what made switching feel like a blink.
+          */}
+          <AnimatePresence mode="popLayout" initial={false} custom={dir}>
+          <motion.div
+            key={`${view}-${view === "month" ? anchor.slice(0, 7) : view === "week" ? week[0] : anchor}`}
+            custom={dir}
+            variants={slide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: "spring", stiffness: 360, damping: 36, mass: 0.7 }}
+          >
           {view === "day" && (
             <DayBody
+              phone={phone}
               date={anchor}
               day={day}
               schedule={sched}
@@ -453,6 +536,7 @@ function CalendarPage() {
 
           {view === "week" && (
             <WeekBody
+              phone={phone}
               days={week}
               contents={contents}
               filter={filter}
@@ -461,7 +545,7 @@ function CalendarPage() {
               now={now}
               onJob={setOpenJob}
               onDay={(d) => {
-                setAnchor(d);
+                goTo(d);
                 setView("day");
               }}
             />
@@ -476,11 +560,14 @@ function CalendarPage() {
               schedules={schedules}
               today={now.date}
               onDay={(d) => {
-                setAnchor(d);
+                goTo(d);
                 setView("day");
               }}
             />
           )}
+
+          </motion.div>
+          </AnimatePresence>
 
           <motion.button
             type="button"
@@ -497,7 +584,7 @@ function CalendarPage() {
           </motion.button>
 
           <Legend googleConnected={gcal.connected} />
-        </motion.div>
+        </div>
       </motion.section>
 
       <JobPanel job={openJob} onClose={() => setOpenJob(null)} />
@@ -514,6 +601,13 @@ function CalendarPage() {
 }
 
 // ------------------------------- pieces -----------------------------------
+
+/** Content slides the way you moved in time; a change of view just fades. */
+const slide = {
+  enter: (d: number) => ({ opacity: 0, x: d * 40 }),
+  center: { opacity: 1, x: 0 },
+  exit: (d: number) => ({ opacity: 0, x: d * -40 }),
+};
 
 function RoundButton({
   label,
@@ -640,6 +734,7 @@ function AllDayRow({ items }: { items: AllDayItem[] }) {
 }
 
 function DayBody({
+  phone,
   date,
   day,
   schedule,
@@ -651,6 +746,7 @@ function DayBody({
   onBlock,
   onUnblock,
 }: {
+  phone: boolean;
   date: string;
   day: DayContents;
   schedule: Hours | undefined;
@@ -675,6 +771,17 @@ function DayBody({
   return (
     <>
       <AllDayRow items={day.allDay} />
+      {phone ? (
+        <DayColumn
+          items={day.timed}
+          hours={hours}
+          schedule={schedule}
+          isToday={date === now.date}
+          nowMinute={now.minute}
+          empty={schedule?.open ? "Nothing booked — the whole day is open" : "Closed"}
+          onJob={onJob}
+        />
+      ) : (
       <Timeline
         rows={[
           {
@@ -691,6 +798,7 @@ function DayBody({
         nowMinute={now.minute}
         onJob={onJob}
       />
+      )}
 
       {/* Day summary, on the glass. */}
       <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -811,6 +919,7 @@ function DayBody({
 
 /** One row per day, hours across — a dispatch board for the week. */
 function WeekBody({
+  phone,
   days,
   contents,
   filter,
@@ -820,6 +929,7 @@ function WeekBody({
   onJob,
   onDay,
 }: {
+  phone: boolean;
   days: string[];
   contents: Map<string, DayContents>;
   filter: Filter;
@@ -843,6 +953,9 @@ function WeekBody({
         <span className="font-semibold text-foreground">{all.length}</span> job{all.length === 1 ? "" : "s"} ·{" "}
         <span className="tnum font-semibold text-foreground">{money(total)}</span> booked this week
       </p>
+      {phone ? (
+        <WeekAgenda days={filtered} schedules={schedules} today={now.date} onJob={onJob} onDay={onDay} />
+      ) : (
       <Timeline
         rows={filtered.map(({ d, day }) => {
           const off = day.allDay.find((a) => a.kind === "off");
@@ -874,7 +987,121 @@ function WeekBody({
         compact
         onJob={onJob}
       />
+      )}
     </>
+  );
+}
+
+/**
+ * Week on a phone: a day-by-day list, like Jobber's List view. Seven time
+ * columns would be ~45px each on a phone, and a sideways-scrolling board is a
+ * desktop pattern, so each day is a heading with its jobs stacked beneath.
+ */
+function WeekAgenda({
+  days,
+  schedules,
+  today,
+  onJob,
+  onDay,
+}: {
+  days: { d: string; day: DayContents }[];
+  schedules: Map<string, Hours | undefined>;
+  today: string;
+  onJob: (j: Job) => void;
+  onDay: (d: string) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      {days.map(({ d, day }) => {
+        const off = day.allDay.find((a) => a.kind === "off");
+        const closed = !schedules.get(d)?.open;
+        return (
+          <section key={d}>
+            <button
+              type="button"
+              onClick={() => onDay(d)}
+              className="cal-press mb-2 flex w-full items-baseline justify-between text-left"
+            >
+              <span className={`text-[14px] font-semibold ${d === today ? "text-primary" : "text-foreground"}`}>
+                {fmt(d, { weekday: "long" })}{" "}
+                <span className="font-normal text-muted-foreground">{fmt(d, { month: "short", day: "numeric" })}</span>
+              </span>
+              <span className="text-[12px] text-muted-foreground">
+                {day.jobs.length
+                  ? `${day.jobs.length} job${day.jobs.length === 1 ? "" : "s"}`
+                  : off
+                    ? "Off"
+                    : closed
+                      ? "Closed"
+                      : "Open"}
+              </span>
+            </button>
+            <AllDayRow items={day.allDay} />
+            {day.timed.length ? (
+              <ul className="space-y-2">
+                {day.timed.map((t) => (
+                  <li key={`${t.kind}-${t.id}`} className="flex gap-3">
+                    <p className="tnum w-12 shrink-0 pt-3 text-right text-[12.5px] font-semibold text-foreground">
+                      {clock(t.start, false)}
+                      <span className="block text-[10.5px] font-normal text-muted-foreground">
+                        {t.start >= 720 ? "PM" : "AM"}
+                      </span>
+                    </p>
+                    {t.kind === "job" ? (
+                      <button
+                        type="button"
+                        onClick={() => onJob(t.job)}
+                        className="cal-glass cal-press relative min-w-0 flex-1 overflow-hidden rounded-2xl py-3 pl-4 pr-3 text-left"
+                        style={{ "--c": jobColor(t.job) } as CSSProperties}
+                      >
+                        <span className="absolute inset-y-2.5 left-0 w-[3px] rounded-r-full bg-[var(--c)]" />
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="truncate text-[15px] font-semibold text-foreground">
+                            {t.job.client?.name ?? "Client"}
+                          </span>
+                          <span className="tnum shrink-0 text-[13px] font-semibold text-foreground/90">
+                            {money((t.job.totalPrice ?? 0) - (t.job.discount ?? 0))}
+                          </span>
+                        </span>
+                        <span className="tnum block truncate text-[12px] text-muted-foreground">
+                          {range(t.start, t.end)} · {t.job.serviceTitle}
+                        </span>
+                        <span className="block truncate text-[12px] text-muted-foreground">
+                          {t.job.location === "mobile" ? t.job.address || "Mobile" : "Drop-off"}
+                        </span>
+                      </button>
+                    ) : t.kind === "event" ? (
+                      <a
+                        href={t.event.htmlLink || undefined}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="cal-glass-ghost cal-press min-w-0 flex-1 rounded-2xl px-4 py-2.5"
+                      >
+                        <span className="block truncate text-[13px] font-medium text-foreground/90">{t.event.summary}</span>
+                        <span className="tnum block text-[11.5px] text-muted-foreground">
+                          {range(t.start, t.end)} · Google
+                        </span>
+                      </a>
+                    ) : (
+                      <div className="cal-off-band min-w-0 flex-1 rounded-2xl px-4 py-2.5">
+                        <span className="cal-off-ink block text-[13px] font-semibold">{t.off.reason || "Time off"}</span>
+                        <span className="tnum block text-[11.5px] text-muted-foreground">{range(t.start, t.end)}</span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              !day.allDay.length && (
+                <p className="rounded-2xl border border-dashed border-[var(--line-2)] px-4 py-3 text-[12.5px] text-muted-foreground">
+                  {closed ? "Closed" : "Nothing booked"}
+                </p>
+              )
+            )}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -927,20 +1154,14 @@ function MonthBody({
             day.allDay.filter((a) => a.kind === "event").length;
           const isToday = d === today;
           return (
-            <motion.button
+            <button
               key={d}
               type="button"
-              initial={{ opacity: 0, scale: 0.95 }}
-              // Opacity lives here, not in a class: Motion's inline style
-              // would override an `opacity-*` and un-dim other months' days.
-              animate={{
-                opacity: outside ? 0.35 : 1,
-                scale: 1,
-                transition: { delay: Math.min(i * 0.006, 0.2) },
-              }}
-              whileTap={{ scale: 0.95 }}
+              // Plain buttons: 42 Motion components re-created on every month
+              // switch was the single heaviest render on this page.
+              style={outside ? { opacity: 0.35 } : undefined}
               onClick={() => onDay(d)}
-              className={`flex min-h-[64px] flex-col rounded-2xl p-1.5 text-left sm:min-h-[118px] sm:rounded-3xl sm:p-2.5 ${
+              className={`cal-press flex min-h-[64px] flex-col rounded-2xl p-1.5 text-left sm:min-h-[118px] sm:rounded-3xl sm:p-2.5 ${
                 closed ? "cal-glass-ghost" : "cal-glass"
               } ${isToday ? "ring-2 ring-[var(--st-accent)]" : ""}`}
             >
@@ -985,7 +1206,7 @@ function MonthBody({
                   </p>
                 )}
               </div>
-            </motion.button>
+            </button>
           );
         })}
       </div>

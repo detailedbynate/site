@@ -59,7 +59,7 @@ export function BottomNav() {
       aria-label="Quick navigation"
       animate={{ y: hidden ? 96 : 0 }}
       transition={{ type: "spring", stiffness: 380, damping: 34 }}
-      className="admin-panel fixed inset-x-0 bottom-0 z-40 border-t border-[var(--line-1)] bg-[var(--background)]/85 backdrop-blur-xl lg:hidden"
+      className="admin-panel fixed inset-x-0 bottom-0 z-40 border-t border-[var(--line-1)] bg-[var(--background)]/95 lg:hidden"
       // Keeps the row clear of the iPhone home indicator.
       style={{ paddingBottom: "max(0.4rem, env(safe-area-inset-bottom))" }}
     >

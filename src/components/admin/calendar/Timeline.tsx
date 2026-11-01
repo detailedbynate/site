@@ -1,5 +1,4 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
-import { motion } from "motion/react";
 import { Ban, CheckCircle2, ExternalLink, MapPin, Store } from "lucide-react";
 
 import { money } from "@/components/admin/ui";
@@ -224,29 +223,25 @@ function Card({
     top: top + 5,
     height: height - 10,
   } as CSSProperties;
-  const anim = {
-    initial: { opacity: 0, y: 8, filter: "blur(4px)" },
-    animate: {
-      opacity: 1,
-      y: 0,
-      filter: "blur(0px)",
-      transition: { delay: Math.min(index * 0.05, 0.35), duration: 0.35 },
-    },
-  };
+  /*
+    Plain elements with CSS hover/press, not Motion components. The whole view
+    already slides in as one piece, so a per-card entrance only repeated that
+    motion — while each Motion card cost its own animation setup on every day
+    you stepped to. CSS transforms run on the compositor and cost nothing
+    until touched. `index` is kept for a tiny staggered fade on first paint.
+  */
+  const enter = { animationDelay: `${Math.min(index * 25, 150)}ms` } as CSSProperties;
 
   if (item.kind === "job") {
     const job = item.job;
     const name = job.client?.name ?? "Client";
     const done = job.status === "completed";
     return (
-      <motion.button
+      <button
         type="button"
-        {...anim}
-        whileHover={{ y: -2 }}
-        whileTap={{ scale: 0.98 }}
         onClick={() => onJob(job)}
-        className="cal-glass group absolute z-10 overflow-hidden rounded-2xl text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        style={{ ...style, "--c": jobColor(job) } as CSSProperties}
+        className="cal-glass cal-press cal-enter group absolute z-10 overflow-hidden rounded-2xl text-left outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        style={{ ...style, ...enter, "--c": jobColor(job) } as CSSProperties}
         title={`${range(item.start, item.end)} · ${name} · ${job.serviceTitle}`}
       >
         <span className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-[var(--c)]" />
@@ -289,20 +284,19 @@ function Card({
             </p>
           </div>
         )}
-      </motion.button>
+      </button>
     );
   }
 
   if (item.kind === "event") {
     const e = item.event;
     return (
-      <motion.a
-        {...anim}
+      <a
         href={e.htmlLink || undefined}
         target="_blank"
         rel="noreferrer"
-        className={`cal-glass-ghost absolute z-[5] flex flex-col justify-center overflow-hidden rounded-2xl px-3 ${e.free ? "opacity-60" : ""}`}
-        style={style}
+        className={`cal-glass-ghost cal-press cal-enter absolute z-[5] flex flex-col justify-center overflow-hidden rounded-2xl px-3 ${e.free ? "opacity-60" : ""}`}
+        style={{ ...style, ...enter }}
         title={`${range(item.start, item.end)} · ${e.summary}${e.free ? " (free — still bookable)" : ""}`}
       >
         <p className="flex items-center gap-1 truncate text-[12.5px] font-medium text-foreground/90">
@@ -310,7 +304,7 @@ function Card({
           <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
         </p>
         <p className="tnum truncate text-[11px] text-muted-foreground">{range(item.start, item.end)} · Google</p>
-      </motion.a>
+      </a>
     );
   }
   return null;

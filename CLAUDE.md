@@ -194,18 +194,37 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
 
 25. **CSS gotcha — use `overflow: clip`, not `hidden`, on anything with a translated `::after`.** The `sheen` and `btn-liquid` utilities have a decorative `::after` at `translateX(-120%)`. A transform contributes to an element's *scrollable overflow region*, and `overflow: hidden` still creates a scroll container — so focusing a child (tabbing to a time slot) made the browser scroll the whole wizard panel ~250px sideways and shove its content out of view. `overflow: clip` clips identically but never becomes scrollable. There are comments on both utilities in `styles.css`; don't "tidy" them back to `hidden`.
 
-26. **Admin calendar is a frosted "stage" with a horizontal timeline.** `/admin/calendar` follows
-    the owner's reference design: Today/Day/Week/Month pill bar, tall day capsules, a Working-hours
-    switch (fit the axis to opening hours, or show 6 AM–10 PM) and an event filter, then a
-    timeline with hours running ACROSS and jobs as glass cards (left = start, width = duration),
-    in `src/components/admin/calendar/Timeline.tsx`. Week is the same component with one row per
-    day, like a dispatch board. Overlapping jobs split into lanes (`placeLanes` in
-    `calendar/model.ts`); time off is a see-through band above jobs, never a lane beside them.
-    Phones scroll the track sideways (min px per hour); from `md` it shrinks to fit the day.
-    **Colours come only from the admin theme tokens** (`.cal-stage` / `.cal-*` in `styles.css`),
-    after a first pass with its own warm palette looked off-brand. Gotcha: mix colours with
-    `transparent` in **srgb**, not oklch — oklch dragged the hue toward red and tinted the dark
-    theme brown.
+26. **Admin calendar: horizontal timeline on desktop, vertical on phones.** `/admin/calendar`
+    follows the owner's reference (frosted "stage", Day/Week/Month pill bar, tall day capsules, a
+    Work hours / Full day switch, an event filter, a Today button that appears only when you've
+    navigated away). Desktop/tablet: hours run ACROSS and jobs are cards whose width is their
+    duration (`calendar/Timeline.tsx`); Week is the same component with a row per day, like a
+    dispatch board. **Phones never scroll sideways** — that's what Jobber and Square
+    Appointments do: Day is a vertical column with time down the left (`calendar/DayColumn.tsx`)
+    and Week is a day-by-day list. `useIsPhone()` renders one or the other, not both. Swiping the
+    header steps day/week/month; content slides in the direction you moved (`AnimatePresence`
+    `popLayout`, so no empty frame between views). Overlapping jobs split into lanes
+    (`placeLanes`); time off is a see-through band above jobs, never a lane. Day data for the
+    whole visible span is built in ONE pass by `buildContents()` with cached `Intl` formatters —
+    building a formatter per event per day was the slowest thing on the page.
+    Colours come only from the admin theme tokens (`.cal-stage` / `.cal-*` in `styles.css`).
+    Gotcha: mix colours with `transparent` in **srgb**, not oklch — oklch dragged the hue toward
+    red and tinted the dark theme brown.
+
+27. **Smoothness rules (measured, not guessed).** Every admin animation moves only `transform` and
+    `opacity`. Specifically, do not reintroduce:
+    - **`backdrop-filter` on admin panels, modal scrims, or the phone header/bottom bar.** The
+      background behind them drifts, so every frosted surface re-blurred on every frame; scrims
+      blurred the whole viewport while fading in, which is what made opening things stutter.
+    - **A CSS `filter: blur()` on the drifting ambient washes.** Their softness is baked into a
+      long eased radial gradient instead. With the blur, desktop frames measured ~10x slower
+      (166ms vs 16.7ms median under 4x CPU throttle in headless Chromium).
+    - **`filter: blur` in enter/exit animations** (calendar cards, booking wizard steps).
+    - **Per-item Motion components in big grids** (month cells, timeline cards): use plain
+      elements with the `.cal-press` / `.cal-enter` CSS utilities. Motion is for the few things
+      that need springs or layout (pills via `layoutId`, panels, view transitions).
+    `MotionConfig reducedMotion="user"` wraps the admin, and `.admin-theme` sets
+    `touch-action: manipulation` so taps respond instantly. Ambient drift is off on phones.
 
 ## File map — everything added/changed this session
 
