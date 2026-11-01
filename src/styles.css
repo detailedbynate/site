@@ -1024,8 +1024,8 @@ body:has(.site) {
    --------------------------------------------------------------------------- */
 .cal-job {
   background: color-mix(in oklch, var(--c) 17%, var(--card));
-  border: 1px solid color-mix(in oklch, var(--c) 36%, transparent);
-  box-shadow: inset 3px 0 0 var(--c), 0 6px 18px -12px color-mix(in oklch, var(--c) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 36%, transparent);
+  box-shadow: inset 3px 0 0 var(--c), 0 6px 18px -12px color-mix(in srgb, var(--c) 70%, transparent);
   transition: background-color 0.15s ease;
 }
 .cal-job:hover {
@@ -1091,4 +1091,124 @@ body:has(.site) {
 .cal-off-tag {
   background: color-mix(in oklch, oklch(0.78 0.14 75) 18%, var(--card));
   border: 1px solid oklch(0.78 0.14 75 / 0.4);
+}
+
+/* ---------------------------------------------------------------------------
+   Calendar "stage" — the layout of the owner's reference (frosted controls,
+   tall day capsules, glass cards on a soft gradient) in the ADMIN'S OWN
+   palette. Every colour is derived from the theme tokens (--primary, --card,
+   --background, --line-*, --fill-*), so it follows light/dark like every
+   other admin page instead of carrying a palette of its own.
+   --------------------------------------------------------------------------- */
+.cal-stage {
+  --st-top: color-mix(in srgb, var(--primary) 20%, var(--card));
+  --st-head-end: color-mix(in srgb, var(--primary) 7%, var(--card));
+  --st-body-mid: var(--card);
+  --st-body-end: color-mix(in srgb, var(--card) 70%, var(--background));
+  --st-ink: var(--foreground);
+  --st-ink-soft: var(--muted-foreground);
+  --st-glass: var(--fill-2);
+  --st-glass-line: var(--line-2);
+  --st-line: var(--line-1);
+  --st-body-soft: var(--muted-foreground);
+  --st-accent: var(--primary);
+  position: relative;
+  overflow: clip;
+  border-radius: 2rem;
+  border: 1px solid var(--line-2);
+  background: var(--st-body-end);
+  box-shadow: var(--shadow-glass);
+}
+.admin-theme.admin-light .cal-stage,
+:root.admin-light .admin-theme .cal-stage {
+  --st-top: color-mix(in srgb, var(--primary) 13%, white);
+  --st-head-end: color-mix(in srgb, var(--primary) 4%, white);
+  --st-body-mid: white;
+  --st-body-end: color-mix(in srgb, white 70%, var(--background));
+  --st-glass: oklch(1 0 0 / 0.7);
+  --st-glass-line: var(--line-2);
+}
+.cal-stage-head {
+  background: linear-gradient(180deg, var(--st-top) 0%, var(--st-head-end) 100%);
+}
+.cal-stage-body {
+  background: linear-gradient(180deg, var(--st-head-end) 0, var(--st-body-mid) 220px, var(--st-body-end) 100%);
+}
+/* Soft brand-coloured bloom behind the header. */
+.cal-stage::before {
+  content: "";
+  position: absolute;
+  inset: -25% -10% auto auto;
+  width: 55%;
+  height: 45%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) 30%, transparent), transparent);
+  pointer-events: none;
+}
+
+/* Frosted controls: bars, capsules, chips, round buttons. */
+.cal-frost {
+  background: var(--st-glass);
+  border: 1px solid var(--st-glass-line);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  color: var(--st-ink);
+}
+/* Selected pill: inverted — white on dark, near-black on light. */
+.cal-frost-active {
+  background: var(--foreground);
+  color: var(--background);
+  box-shadow: 0 8px 24px -10px color-mix(in srgb, var(--foreground) 45%, transparent);
+}
+
+/* Cards. */
+.cal-glass {
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  border: 1px solid var(--line-2);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow: inset 0 1px 0 var(--line-1), 0 14px 30px -20px oklch(0 0 0 / 0.55);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.cal-glass:hover {
+  background: var(--card);
+  border-color: var(--line-3);
+}
+.admin-theme.admin-light .cal-glass,
+:root.admin-light .admin-theme .cal-glass {
+  background: oklch(1 0 0 / 0.85);
+  box-shadow: 0 10px 28px -18px oklch(0.4 0.05 258 / 0.35);
+}
+.cal-glass-ghost {
+  background: var(--fill-1);
+  border: 1px dashed var(--line-3);
+}
+.cal-glass-ghost:hover {
+  background: var(--fill-2);
+}
+.cal-off-band {
+  background: repeating-linear-gradient(
+    135deg,
+    oklch(0.8 0.13 75 / 0.18) 0 6px,
+    transparent 6px 12px
+  );
+  border: 1px solid oklch(0.8 0.13 75 / 0.38);
+}
+.cal-stage .cal-closed {
+  background: repeating-linear-gradient(135deg, var(--fill-2) 0 3px, transparent 3px 9px);
+}
+.cal-row-today {
+  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+/* Sticky day labels in Week: a small frosted chip, so cards scrolling under
+   them on a phone stay legible. */
+.cal-row-label > * {
+  border-radius: 0.9rem;
+  padding: 0.3rem 0.55rem;
+  background: color-mix(in srgb, var(--card) 75%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.cal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-3) transparent;
 }

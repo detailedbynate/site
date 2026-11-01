@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { motion } from "motion/react";
 import {
   Ban,
-  CalendarDays,
   Car,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -13,6 +13,7 @@ import {
   MapPin,
   MessageSquare,
   Phone,
+  Plus,
   Store,
   X,
 } from "lucide-react";
@@ -31,13 +32,12 @@ import {
   DetailGroup,
   DetailPanel,
   ErrorNote,
-  GlassCard,
   Spinner,
   StatusPill,
   money,
 } from "@/components/admin/ui";
-import { TabBar } from "@/components/admin/TabBar";
-import { AllDayChips, TimeGrid } from "@/components/admin/calendar/TimeGrid";
+import { NewAppointmentDialog } from "@/components/admin/NewAppointmentDialog";
+import { Timeline } from "@/components/admin/calendar/Timeline";
 import {
   PACKAGE_LEGEND,
   addDays,
@@ -53,10 +53,12 @@ import {
   vehicleLine,
   visibleHours,
   weekOf,
+  type AllDayItem,
   type DayContents,
   type GEvent,
   type Hours,
   type Job,
+  type TimedItem,
   type TimeOffEntry,
 } from "@/components/admin/calendar/model";
 
@@ -65,18 +67,21 @@ export const Route = createFileRoute("/admin/calendar")({
 });
 
 type View = "day" | "week" | "month";
+type Filter = "all" | "jobs" | "google" | "off";
 type Settings = Awaited<ReturnType<typeof getAdminSettings>>["settings"];
 
-const VIEW_KEY = "dbn.admin.calendar.view";
+const PREFS_KEY = "dbn.admin.calendar.prefs";
 
-function readView(): View {
+function readPrefs(): { view: View; fit: boolean } {
   try {
-    const v = localStorage.getItem(VIEW_KEY);
-    if (v === "day" || v === "week" || v === "month") return v;
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+    return {
+      view: p.view === "week" || p.view === "month" ? p.view : "day",
+      fit: p.fit !== false,
+    };
   } catch {
-    // Private mode or blocked storage — the default is fine.
+    return { view: "day", fit: true };
   }
-  return "day";
 }
 
 /**
@@ -90,8 +95,36 @@ function scheduleFor(date: string, s: Settings | null): Hours | undefined {
   const ranges = s.availabilityRanges ?? [];
   const hit = ranges.find((r) => r.start <= date && date <= r.end);
   if (!hit && s.onlyInRanges && ranges.length) return { open: false, openHour: 0, closeHour: 0 };
-  const week = hit?.schedule ?? s.weeklySchedule;
-  return week?.[weekday];
+  return (hit?.schedule ?? s.weeklySchedule)?.[weekday];
+}
+
+/** Drop what the "All events" filter hides. */
+function filterDay(day: DayContents | undefined, f: Filter): DayContents {
+  const d = day ?? { timed: [], allDay: [], jobs: [] };
+  if (f === "all") return d;
+  const keep = (k: string) => (f === "jobs" ? k === "job" : f === "google" ? k === "event" : k === "off");
+  return {
+    timed: d.timed.filter((t) => keep(t.kind)),
+    allDay: d.allDay.filter((a) => keep(a.kind)),
+    jobs: f === "jobs" ? d.jobs : [],
+  };
+}
+
+/** Open stretches of at least an hour between everything that blocks time. */
+function freeGaps(day: DayContents | undefined, s: Hours | undefined): [number, number][] {
+  if (!s?.open || day?.allDay.length) return [];
+  const blocks = (day?.timed ?? [])
+    .filter((t) => t.kind !== "event" || !t.event.free)
+    .map((t) => [t.start, t.end] as [number, number])
+    .sort((a, b) => a[0] - b[0]);
+  const gaps: [number, number][] = [];
+  let cursor = s.openHour * 60;
+  for (const [a, b] of blocks) {
+    if (a > cursor) gaps.push([cursor, Math.min(a, s.closeHour * 60)]);
+    cursor = Math.max(cursor, b);
+  }
+  if (cursor < s.closeHour * 60) gaps.push([cursor, s.closeHour * 60]);
+  return gaps.filter(([a, b]) => b - a >= 60);
 }
 
 function CalendarPage() {
@@ -108,18 +141,32 @@ function CalendarPage() {
   const [now, setNow] = useState(() => nowInZone(timeZone));
   const [anchor, setAnchor] = useState(now.date);
   const [view, setViewState] = useState<View>("day");
+  const [fit, setFitState] = useState(true);
+  const [filter, setFilter] = useState<Filter>("all");
   const [openJob, setOpenJob] = useState<Job | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Restored after mount: localStorage doesn't exist during SSR.
-  useEffect(() => setViewState(readView()), []);
-  const setView = (v: View) => {
-    setViewState(v);
+  useEffect(() => {
+    const p = readPrefs();
+    setViewState(p.view);
+    setFitState(p.fit);
+  }, []);
+  const save = (patch: Partial<{ view: View; fit: boolean }>) => {
     try {
-      localStorage.setItem(VIEW_KEY, v);
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...readPrefs(), ...patch }));
     } catch {
       // Not worth surfacing.
     }
+  };
+  const setView = (v: View) => {
+    setViewState(v);
+    save({ view: v });
+  };
+  const setFit = (v: boolean) => {
+    setFitState(v);
+    save({ fit: v });
   };
 
   // Keep the "now" line moving, and re-anchor once the shop timezone is known.
@@ -138,18 +185,20 @@ function CalendarPage() {
       .then((r) => setTimeOff(r.entries))
       .catch(() => setTimeOff([]));
   }, []);
-
-  useEffect(() => {
-    loadTimeOff();
+  const loadJobs = useCallback(() => {
     listAppointments()
       .then((r) => setJobs(r.bookings))
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load."));
+  }, []);
+
+  useEffect(() => {
+    loadTimeOff();
+    loadJobs();
     getAdminSettings()
       .then((r) => setSettings(r.settings))
       .catch(() => setSettings(null));
-  }, [loadTimeOff]);
+  }, [loadTimeOff, loadJobs]);
 
-  // What's on screen, as a date span.
   const week = useMemo(() => weekOf(anchor), [anchor]);
   const grid = useMemo(() => monthGrid(anchor), [anchor]);
   const span = useMemo(() => {
@@ -215,16 +264,7 @@ function CalendarPage() {
   if (error) return <ErrorNote>{error}</ErrorNote>;
   if (!jobs) return <Spinner label="Loading calendar…" />;
 
-  const title =
-    view === "day"
-      ? fmt(anchor, { weekday: "long", month: "long", day: "numeric" })
-      : view === "week"
-        ? `${fmt(week[0], { month: "short", day: "numeric" })} – ${fmt(week[6], {
-            month: week[0].slice(5, 7) === week[6].slice(5, 7) ? undefined : "short",
-            day: "numeric",
-          })}`
-        : fmt(anchor, { month: "long", year: "numeric" });
-
+  const isTodayView = view === "day" && anchor === now.date;
   const eyebrow =
     view === "day"
       ? anchor === now.date
@@ -233,160 +273,272 @@ function CalendarPage() {
           ? "Tomorrow"
           : anchor === addDays(now.date, -1)
             ? "Yesterday"
-            : fmt(anchor, { year: "numeric" })
+            : fmt(anchor, { weekday: "long" })
       : view === "week"
         ? week.includes(now.date)
           ? "This week"
-          : fmt(week[0], { year: "numeric" })
-        : "Month";
-
-  const showingToday =
+          : `Week of ${fmt(week[0], { month: "short", day: "numeric" })}`
+        : fmt(anchor, { year: "numeric" });
+  const title =
     view === "day"
-      ? anchor === now.date
+      ? fmt(
+          anchor,
+          anchor === now.date
+            ? { weekday: "long", month: "short", day: "numeric" }
+            : { month: "long", day: "numeric" },
+        )
       : view === "week"
-        ? week.includes(now.date)
-        : anchor.slice(0, 7) === now.date.slice(0, 7);
+        ? `${fmt(week[0], { month: "short", day: "numeric" })} – ${fmt(week[6], {
+            month: week[0].slice(5, 7) === week[6].slice(5, 7) ? undefined : "short",
+            day: "numeric",
+          })}`
+        : fmt(anchor, { month: "long" });
+
+  const day = filterDay(contents.get(anchor), filter);
+  const sched = schedules.get(anchor);
+  const workHours = sched?.open
+    ? `${clock(sched.openHour * 60)} – ${clock(sched.closeHour * 60)}`
+    : "Closed";
+
+  /** Hours on the axis: your working day when "fit" is on, otherwise 6 AM – 10 PM. */
+  const axis = (scheds: (Hours | undefined)[], items: TimedItem[]): [number, number] => {
+    const fitted = visibleHours(scheds, items);
+    return fit ? fitted : [Math.min(6, fitted[0]), Math.max(22, fitted[1])];
+  };
 
   return (
     <>
-      {/* ------------------------------ header ------------------------------ */}
-      <motion.header
-        initial={{ opacity: 0, y: -8 }}
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-4"
+        transition={{ duration: 0.4 }}
+        className="cal-stage -mx-2 sm:mx-0"
       >
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            {eyebrow}
-          </p>
-          <h1 className="mt-1 truncate text-[26px] font-bold leading-tight tracking-[-0.03em] text-foreground sm:text-[30px]">
-            {title}
-          </h1>
-        </div>
+        {/* ------------------------------- head ------------------------------- */}
+        <div className="cal-stage-head relative px-4 pb-6 pt-5 sm:px-7 sm:pt-7">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-[var(--st-ink-soft)]">{eyebrow}</p>
+              <h1 className="mt-0.5 truncate text-[28px] font-light leading-tight tracking-[-0.02em] text-[var(--st-ink)] sm:text-[36px]">
+                {title}
+              </h1>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <RoundButton label="Previous" onClick={() => step(-1)}>
+                <ChevronLeft className="h-[18px] w-[18px]" />
+              </RoundButton>
+              <RoundButton label="Next" onClick={() => step(1)}>
+                <ChevronRight className="h-[18px] w-[18px]" />
+              </RoundButton>
+            </div>
+          </div>
 
-        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
-          <TabBar
-            layoutId="cal-view"
-            value={view}
-            onChange={setView}
-            tabs={[
-              { value: "day", label: "Day" },
-              { value: "week", label: "Week" },
-              { value: "month", label: "Month" },
-            ]}
-          />
-          <div className="flex items-center gap-1.5">
-            {!showingToday && (
-              <Button size="sm" variant="outline" onClick={() => setAnchor(now.date)}>
-                Today
-              </Button>
-            )}
-            <IconButton label="Previous" onClick={() => step(-1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </IconButton>
-            <IconButton label="Next" onClick={() => step(1)}>
-              <ChevronRight className="h-4 w-4" />
-            </IconButton>
+          {/* Today / Day / Week / Month */}
+          <div className="cal-frost mt-5 grid grid-cols-4 rounded-full p-1">
+            {(
+              [
+                { key: "today", label: "Today", active: isTodayView },
+                { key: "day", label: "Day", active: view === "day" && !isTodayView },
+                { key: "week", label: "Week", active: view === "week" },
+                { key: "month", label: "Month", active: view === "month" },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={t.active}
+                onClick={() => {
+                  if (t.key === "today") {
+                    setAnchor(now.date);
+                    setView("day");
+                  } else setView(t.key);
+                }}
+                className="relative rounded-full py-2.5 text-[13.5px] font-medium transition-colors"
+              >
+                {t.active && (
+                  <motion.span
+                    layoutId="cal-seg"
+                    className="cal-frost-active absolute inset-0 rounded-full"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                  />
+                )}
+                <span className={`relative ${t.active ? "text-[var(--background)]" : "opacity-75"}`}>
+                  {t.label}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {view !== "month" && (
+            <Capsules
+              days={week}
+              selected={view === "day" ? anchor : null}
+              today={now.date}
+              contents={contents}
+              schedules={schedules}
+              onPick={(d) => {
+                setAnchor(d);
+                setView("day");
+              }}
+            />
+          )}
+
+          {/* Working hours + filter */}
+          <div className="mt-4 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-2.5">
+            <div className="cal-frost flex items-center gap-2.5 rounded-full py-1.5 pl-3 pr-1.5">
+              <Clock className="h-4 w-4 shrink-0 opacity-80" />
+              <div className="min-w-0 flex-1 leading-tight">
+                <p className="text-[10.5px] opacity-70">Working hours</p>
+                <p className="tnum truncate text-[12px] font-medium">
+                  {view === "day" ? workHours : "Fit to hours"}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={fit}
+                aria-label="Fit timeline to working hours"
+                onClick={() => setFit(!fit)}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                  fit ? "bg-primary" : "bg-[var(--fill-3)]"
+                }`}
+              >
+                <motion.span
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow ${fit ? "right-1" : "left-1"}`}
+                />
+              </button>
+            </div>
+            <label className="cal-frost relative flex items-center gap-2 rounded-full px-3.5">
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as Filter)}
+                className="h-full w-full cursor-pointer appearance-none bg-transparent py-3 pr-5 text-[12.5px] font-medium text-inherit outline-none"
+                aria-label="Show"
+              >
+                <option value="all">All events</option>
+                <option value="jobs">Jobs only</option>
+                <option value="google">Google events</option>
+                <option value="off">Time off</option>
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 opacity-70" />
+            </label>
           </div>
         </div>
-      </motion.header>
 
-      {view !== "month" && (
-        <WeekStrip
-          days={week}
-          selected={view === "day" ? anchor : null}
-          today={now.date}
-          contents={contents}
-          schedules={schedules}
-          onPick={(d) => {
-            setAnchor(d);
-            setView("day");
-          }}
-        />
-      )}
+        {/* ------------------------------- body ------------------------------- */}
+        <motion.div
+          key={`${view}-${view === "month" ? anchor.slice(0, 7) : view === "week" ? week[0] : anchor}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          className="cal-stage-body relative px-4 pb-5 pt-5 sm:px-7 sm:pb-7"
+        >
+          {view === "day" && (
+            <DayBody
+              date={anchor}
+              day={day}
+              schedule={sched}
+              hours={axis([sched], day.timed)}
+              now={now}
+              busy={busy}
+              googleConnected={gcal.connected}
+              onJob={setOpenJob}
+              onBlock={blockDay}
+              onUnblock={unblock}
+            />
+          )}
 
-      <motion.div
-        key={view}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-      >
-        {view === "day" && (
-          <DayView
-            date={anchor}
-            day={contents.get(anchor)}
-            schedule={schedules.get(anchor)}
-            now={now}
-            busy={busy}
-            googleConnected={gcal.connected}
-            onJob={setOpenJob}
-            onBlock={blockDay}
-            onUnblock={unblock}
-          />
-        )}
+          {view === "week" && (
+            <WeekBody
+              days={week}
+              contents={contents}
+              filter={filter}
+              schedules={schedules}
+              axis={axis}
+              now={now}
+              onJob={setOpenJob}
+              onDay={(d) => {
+                setAnchor(d);
+                setView("day");
+              }}
+            />
+          )}
 
-        {view === "week" && (
-          <WeekView
-            days={week}
-            contents={contents}
-            schedules={schedules}
-            now={now}
-            onJob={setOpenJob}
-            onDay={(d) => {
-              setAnchor(d);
-              setView("day");
-            }}
-          />
-        )}
+          {view === "month" && (
+            <MonthBody
+              anchor={anchor}
+              days={grid}
+              contents={contents}
+              filter={filter}
+              schedules={schedules}
+              today={now.date}
+              onDay={(d) => {
+                setAnchor(d);
+                setView("day");
+              }}
+            />
+          )}
 
-        {view === "month" && (
-          <MonthView
-            anchor={anchor}
-            days={grid}
-            contents={contents}
-            schedules={schedules}
-            today={now.date}
-            onDay={(d) => {
-              setAnchor(d);
-              setView("day");
-            }}
-          />
-        )}
-      </motion.div>
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setCreating(true)}
+            style={{ backgroundImage: "var(--gradient-brand)" }}
+            className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-full py-4 text-[15px] font-semibold text-primary-foreground shadow-[var(--shadow-glow)]"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border-[1.5px] border-current">
+              <Plus className="h-3.5 w-3.5" />
+            </span>
+            New appointment
+          </motion.button>
 
-      <Legend googleConnected={gcal.connected} />
+          <Legend googleConnected={gcal.connected} />
+        </motion.div>
+      </motion.section>
 
       <JobPanel job={openJob} onClose={() => setOpenJob(null)} />
+      <NewAppointmentDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => {
+          setCreating(false);
+          loadJobs();
+        }}
+      />
     </>
   );
 }
 
 // ------------------------------- pieces -----------------------------------
 
-function IconButton({
+function RoundButton({
   label,
   onClick,
   children,
 }: {
   label: string;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <motion.button
       type="button"
-      whileTap={{ scale: 0.92 }}
+      whileTap={{ scale: 0.9 }}
       onClick={onClick}
       aria-label={label}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--fill-1)] text-foreground transition-colors hover:bg-[var(--fill-3)]"
+      className="cal-frost flex h-11 w-11 items-center justify-center rounded-full transition-opacity hover:opacity-85"
     >
       {children}
     </motion.button>
   );
 }
 
-/** Seven day pills, Monday first. A coloured dot per booked job. */
-function WeekStrip({
+/** Tall frosted day capsules, Monday first; the chosen day turns solid white. */
+function Capsules({
   days,
   selected,
   today,
@@ -402,61 +554,55 @@ function WeekStrip({
   onPick: (d: string) => void;
 }) {
   return (
-    <div className="mb-5 grid grid-cols-7 gap-1.5 sm:gap-2.5">
+    <div className="mt-4 grid grid-cols-7 gap-1.5 sm:gap-3">
       {days.map((d) => {
         const isSel = d === selected;
-        const isToday = d === today;
         const day = contents.get(d);
         const closed = !schedules.get(d)?.open || day?.allDay.some((a) => a.kind === "off");
+        const count = day?.jobs.length ?? 0;
         return (
           <motion.button
             key={d}
             type="button"
             whileTap={{ scale: 0.94 }}
             onClick={() => onPick(d)}
-            className={`relative flex flex-col items-center rounded-[18px] border py-2.5 transition-colors sm:rounded-2xl sm:py-3 ${
-              isSel
-                ? "border-transparent text-primary-foreground shadow-[var(--shadow-glow)]"
-                : isToday
-                  ? "border-primary/50 bg-primary/[0.06] text-foreground"
-                  : "border-[var(--line-2)] bg-[var(--fill-1)] text-foreground hover:bg-[var(--fill-2)]"
+            className={`cal-frost relative flex flex-col items-center rounded-full pb-3 pt-3 sm:pb-3.5 sm:pt-3.5 ${
+              closed && !isSel ? "opacity-55" : ""
             }`}
           >
             {isSel && (
               <motion.span
-                layoutId="cal-day-pill"
-                className="absolute inset-0 rounded-[inherit]"
-                style={{ backgroundImage: "var(--gradient-brand)" }}
-                transition={{ type: "spring", stiffness: 420, damping: 36 }}
+                layoutId="cal-capsule"
+                className="cal-frost-active absolute inset-0 rounded-full"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
               />
             )}
             <span
-              className={`relative text-[10.5px] font-semibold uppercase tracking-[0.08em] sm:text-[11px] ${
-                isSel ? "opacity-80" : closed ? "text-muted-foreground/60" : "text-muted-foreground"
-              }`}
+              className={`relative text-[11px] font-medium ${isSel ? "text-[var(--background)]" : "opacity-70"}`}
             >
-              {fmt(d, { weekday: "short" })}
+              {fmt(d, { weekday: "narrow" })}
+              <span className="hidden sm:inline">{fmt(d, { weekday: "short" }).slice(1)}</span>
             </span>
             <span
-              className={`tnum relative mt-0.5 text-[18px] font-bold leading-none sm:text-[20px] ${
-                !isSel && closed ? "text-muted-foreground/70" : ""
-              }`}
+              className={`tnum relative mt-1 text-[17px] font-semibold leading-none sm:text-[19px] ${
+                isSel ? "text-[var(--background)]" : ""
+              } ${d === today && !isSel ? "underline decoration-[var(--st-accent)] decoration-2 underline-offset-4" : ""}`}
             >
               {Number(d.slice(8))}
             </span>
-            <span className="relative mt-1.5 flex h-1.5 items-center gap-0.5">
-              {(day?.jobs ?? []).slice(0, 3).map((j) => (
-                <span
-                  key={j.id}
-                  className={`h-1.5 w-1.5 rounded-full ${isSel ? "bg-primary-foreground/80" : "cal-dot"}`}
-                  style={{ "--c": jobColor(j) } as CSSProperties}
-                />
-              ))}
-              {(day?.jobs.length ?? 0) > 3 && (
-                <span className={`text-[9px] font-bold leading-none ${isSel ? "" : "text-muted-foreground"}`}>
-                  +
-                </span>
-              )}
+            <span className="relative mt-2 flex h-1.5 items-center gap-[3px]">
+              {count > 0 &&
+                (isSel ? (
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--st-accent)]" />
+                ) : (
+                  day!.jobs.slice(0, 3).map((j) => (
+                    <span
+                      key={j.id}
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ background: jobColor(j) }}
+                    />
+                  ))
+                ))}
             </span>
           </motion.button>
         );
@@ -465,27 +611,39 @@ function WeekStrip({
   );
 }
 
-/** Open stretches of at least an hour between everything that blocks time. */
-function freeGaps(day: DayContents | undefined, s: Hours | undefined): [number, number][] {
-  if (!s?.open || day?.allDay.length) return [];
-  const blocks = (day?.timed ?? [])
-    .filter((t) => t.kind !== "event" || !t.event.free)
-    .map((t) => [t.start, t.end] as [number, number])
-    .sort((a, b) => a[0] - b[0]);
-  const gaps: [number, number][] = [];
-  let cursor = s.openHour * 60;
-  for (const [a, b] of blocks) {
-    if (a > cursor) gaps.push([cursor, Math.min(a, s.closeHour * 60)]);
-    cursor = Math.max(cursor, b);
-  }
-  if (cursor < s.closeHour * 60) gaps.push([cursor, s.closeHour * 60]);
-  return gaps.filter(([a, b]) => b - a >= 60);
+function AllDayRow({ items }: { items: AllDayItem[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {items.map((it) =>
+        it.kind === "off" ? (
+          <span
+            key={it.id}
+            className="cal-off-band flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold cal-off-ink"
+          >
+            <Ban className="h-3.5 w-3.5" /> {it.off.reason || "Day off"}
+          </span>
+        ) : (
+          <a
+            key={it.id}
+            href={it.event.htmlLink}
+            target="_blank"
+            rel="noreferrer"
+            className="cal-glass-ghost rounded-full px-3 py-1.5 text-[12px] font-medium text-foreground/90"
+          >
+            {it.event.summary} · all day
+          </a>
+        ),
+      )}
+    </div>
+  );
 }
 
-function DayView({
+function DayBody({
   date,
   day,
   schedule,
+  hours,
   now,
   busy,
   googleConnected,
@@ -494,8 +652,9 @@ function DayView({
   onUnblock,
 }: {
   date: string;
-  day: DayContents | undefined;
+  day: DayContents;
   schedule: Hours | undefined;
+  hours: [number, number];
   now: { date: string; minute: number };
   busy: boolean;
   googleConnected: boolean;
@@ -503,166 +662,111 @@ function DayView({
   onBlock: (d: string) => void;
   onUnblock: (id: string) => void;
 }) {
-  const jobs = day?.jobs ?? [];
+  const jobs = day.jobs;
   const value = jobs.reduce((s, j) => s + (j.totalPrice ?? 0) - (j.discount ?? 0), 0);
   const bookedMin = jobs.reduce((s, j) => s + j.durationMinutes, 0);
   const openMin = schedule?.open ? (schedule.closeHour - schedule.openHour) * 60 : 0;
-  const hoursShown = visibleHours([schedule], day?.timed ?? []);
   const gaps = freeGaps(day, schedule);
-  const offEntries = (day?.allDay ?? []).filter((a) => a.kind === "off");
-  const timedOff = (day?.timed ?? []).filter((t) => t.kind === "off");
-  const allOff = [...offEntries.map((o) => o.off), ...timedOff.map((t) => t.off)];
-
-  const stats = [
-    { label: "Jobs", value: String(jobs.length) },
-    { label: "Booked", value: money(value) },
-    {
-      label: "Hours",
-      value: openMin ? `${duration(bookedMin)} / ${duration(openMin)}` : duration(bookedMin),
-    },
+  const offs = [
+    ...day.allDay.flatMap((a) => (a.kind === "off" ? [a.off] : [])),
+    ...day.timed.flatMap((t) => (t.kind === "off" ? [t.off] : [])),
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="min-w-0">
-        {/* Phone summary: the sidebar's numbers, compressed. */}
-        <div className="mb-4 grid grid-cols-3 gap-2 lg:hidden">
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className="rounded-2xl border border-[var(--line-2)] bg-[var(--fill-1)] px-3 py-2.5"
-            >
-              <p className="text-[10.5px] font-medium text-muted-foreground">{s.label}</p>
-              <p className="tnum mt-0.5 truncate text-[14px] font-bold text-foreground">{s.value}</p>
-            </div>
-          ))}
-        </div>
+    <>
+      <AllDayRow items={day.allDay} />
+      <Timeline
+        rows={[
+          {
+            key: date,
+            items: day.timed,
+            schedule,
+            isToday: date === now.date,
+            empty: schedule?.open ? "Nothing booked — the whole day is open" : "Closed",
+          },
+        ]}
+        hours={hours}
+        minHourPx={124}
+        laneHeight={132}
+        nowMinute={now.minute}
+        onJob={onJob}
+      />
 
-        <GlassCard className="p-3 sm:p-5">
-          {day?.allDay.length ? (
-            <div className="mb-3 pl-11 sm:pl-14">
-              <AllDayChips items={day.allDay} />
-            </div>
-          ) : null}
-
-          {!schedule?.open && !jobs.length && !(day?.timed.length) ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <CalendarDays className="h-8 w-8 text-muted-foreground/60" />
-              <p className="mt-3 text-[15px] font-semibold text-foreground">Closed</p>
-              <p className="mt-1 text-[12.5px] text-muted-foreground">
-                Not a working day under your current hours.
-              </p>
-            </div>
-          ) : (
-            <TimeGrid
-              days={[date]}
-              contents={new Map([[date, day ?? { timed: [], allDay: [], jobs: [] }]])}
-              hours={hoursShown}
-              hourHeight={68}
-              schedules={new Map([[date, schedule]])}
-              today={now.date}
-              nowMinute={now.minute}
-              onJob={onJob}
-            />
-          )}
-        </GlassCard>
-      </div>
-
-      {/* --------------------------- day sidebar --------------------------- */}
-      <div className="space-y-4">
-        <GlassCard className="hidden p-5 lg:block">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Day at a glance
-          </p>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+      {/* Day summary, on the glass. */}
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="cal-glass rounded-3xl p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Day</p>
+          <div className="mt-2 flex items-end gap-5">
             <div>
-              <p className="tnum text-[24px] font-bold leading-none text-foreground">{jobs.length}</p>
-              <p className="mt-1 text-[11.5px] text-muted-foreground">
-                job{jobs.length === 1 ? "" : "s"}
-              </p>
+              <p className="tnum text-[26px] font-light leading-none text-foreground">{jobs.length}</p>
+              <p className="mt-1 text-[11.5px] text-muted-foreground">job{jobs.length === 1 ? "" : "s"}</p>
             </div>
             <div>
-              <p className="tnum text-[24px] font-bold leading-none text-foreground">{money(value)}</p>
-              <p className="mt-1 text-[11.5px] text-muted-foreground">booked value</p>
+              <p className="tnum text-[26px] font-light leading-none text-foreground">{money(value)}</p>
+              <p className="mt-1 text-[11.5px] text-muted-foreground">booked</p>
             </div>
           </div>
           {openMin > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between text-[11.5px] text-muted-foreground">
-                <span>{duration(bookedMin)} booked</span>
-                <span>
-                  {clock(schedule!.openHour * 60)} – {clock(schedule!.closeHour * 60)}
-                </span>
-              </div>
-              <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--fill-3)]">
+            <>
+              <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-[var(--fill-3)]">
                 <motion.div
-                  className="h-full rounded-full"
-                  style={{ backgroundImage: "var(--gradient-brand)" }}
+                  className="h-full rounded-full bg-[var(--st-accent)]"
                   initial={{ width: 0 }}
                   animate={{ width: `${Math.min(100, (bookedMin / openMin) * 100)}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
+                  transition={{ duration: 0.7, ease: "easeOut" }}
                 />
               </div>
-            </div>
+              <p className="tnum mt-1.5 text-[11.5px] text-muted-foreground">
+                {duration(bookedMin)} of {duration(openMin)} booked
+              </p>
+            </>
           )}
-        </GlassCard>
+        </div>
 
-        <GlassCard className="p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            Free time
-          </p>
+        <div className="cal-glass rounded-3xl p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Free time</p>
           {gaps.length ? (
-            <ul className="mt-3 space-y-2">
+            <div className="mt-2.5 flex flex-wrap gap-2">
               {gaps.map(([a, b]) => (
-                <li
+                <span
                   key={a}
-                  className="flex items-center justify-between rounded-xl border border-dashed border-[var(--line-3)] px-3 py-2.5"
+                  className="tnum rounded-full border border-dashed border-[var(--line-3)] px-3 py-1.5 text-[12px] font-medium text-foreground/90"
                 >
-                  <span className="tnum text-[13px] font-semibold text-foreground">{range(a, b)}</span>
-                  <span className="tnum text-[11.5px] text-muted-foreground">{duration(b - a)}</span>
-                </li>
+                  {range(a, b)} <span className="text-muted-foreground">· {duration(b - a)}</span>
+                </span>
               ))}
-            </ul>
+            </div>
           ) : (
             <p className="mt-2 text-[12.5px] text-muted-foreground">
               {schedule?.open ? "No gaps of an hour or more." : "Closed this day."}
             </p>
           )}
-        </GlassCard>
+        </div>
 
         {/*
-          Blocking time lives here, on the day itself, because this is where
-          you are when you realise you need it. It is also the only way to be
-          unavailable without connecting Google.
+          Blocking time lives on the day itself, because this is where you
+          are when you realise you need it — and it works without Google.
         */}
-        <GlassCard className="p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="cal-glass rounded-3xl p-4">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             Availability
           </p>
-          {allOff.length ? (
-            <ul className="mt-3 space-y-2">
-              {allOff.map((t) => (
-                <li key={t.id} className="cal-off flex items-center gap-2 rounded-xl px-3 py-2.5">
-                  <Ban className="cal-off-ink h-3.5 w-3.5 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="cal-off-ink text-[12.5px] font-semibold">
-                      {t.allDay
-                        ? "Off all day"
-                        : `Off ${clock(toMinutes(t.startTime))} – ${clock(toMinutes(t.endTime))}`}
-                    </p>
-                    {(t.reason || t.startDate !== t.endDate) && (
-                      <p className="truncate text-[11.5px] text-muted-foreground">
-                        {[t.reason, t.startDate !== t.endDate ? `${t.startDate} → ${t.endDate}` : ""]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    )}
-                  </div>
+          {offs.length ? (
+            <ul className="mt-2.5 space-y-2">
+              {offs.map((t) => (
+                <li key={t.id} className="cal-off-band flex items-center gap-2 rounded-2xl px-3 py-2">
+                  <Ban className="h-3.5 w-3.5 shrink-0 cal-off-ink" />
+                  <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold cal-off-ink">
+                    {t.allDay
+                      ? "Off all day"
+                      : `Off ${clock(toMinutes(t.startTime))} – ${clock(toMinutes(t.endTime))}`}
+                    {t.reason ? <span className="font-normal opacity-70"> · {t.reason}</span> : null}
+                  </p>
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => onUnblock(t.id)}
-                    className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-[var(--fill-2)] hover:text-foreground disabled:opacity-50"
+                    className="rounded-full p-1 text-muted-foreground hover:bg-[var(--fill-3)] hover:text-foreground disabled:opacity-50"
                     aria-label="Remove time off"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -674,197 +778,111 @@ function DayView({
             <>
               <p className="mt-2 text-[12.5px] text-muted-foreground">
                 {schedule?.open
-                  ? `Open ${clock(schedule.openHour * 60)} – ${clock(schedule.closeHour * 60)} for online booking.`
+                  ? `Open for online booking ${clock(schedule.openHour * 60)} – ${clock(schedule.closeHour * 60)}.`
                   : "Closed under your weekly hours."}
               </p>
               {schedule?.open && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  loading={busy}
+                <button
+                  type="button"
+                  disabled={busy}
                   onClick={() => onBlock(date)}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-[var(--line-3)] px-3.5 py-1.5 text-[12px] font-semibold text-foreground transition-colors hover:bg-[var(--fill-3)] disabled:opacity-50"
                 >
                   <Ban className="h-3.5 w-3.5" /> Block this day off
-                </Button>
+                </button>
               )}
             </>
           )}
-          {jobs.length > 0 && allOff.length > 0 && (
-            <p className="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
-              Blocking stops new bookings. Jobs already booked stay put — cancel them from
-              Appointments if you need to.
+          {jobs.length > 0 && offs.length > 0 && (
+            <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              Blocking stops new bookings; jobs already booked stay put.
             </p>
           )}
           {!googleConnected && (
-            <p className="mt-3 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
-              <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Connect Google Calendar under Integrations to see your other commitments here.
+            <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              Connect Google Calendar under Integrations to see other commitments here.
             </p>
           )}
-        </GlassCard>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-function WeekView({
+/** One row per day, hours across — a dispatch board for the week. */
+function WeekBody({
   days,
   contents,
+  filter,
   schedules,
+  axis,
   now,
   onJob,
   onDay,
 }: {
   days: string[];
   contents: Map<string, DayContents>;
+  filter: Filter;
   schedules: Map<string, Hours | undefined>;
+  axis: (s: (Hours | undefined)[], items: TimedItem[]) => [number, number];
   now: { date: string; minute: number };
   onJob: (j: Job) => void;
   onDay: (d: string) => void;
 }) {
-  const all = days.flatMap((d) => contents.get(d)?.timed ?? []);
-  const hoursShown = visibleHours(
+  const filtered = days.map((d) => ({ d, day: filterDay(contents.get(d), filter) }));
+  const hours = axis(
     days.map((d) => schedules.get(d)),
-    all,
+    filtered.flatMap((f) => f.day.timed),
   );
-  const hasAllDay = days.some((d) => contents.get(d)?.allDay.length);
-  const total = days
-    .flatMap((d) => contents.get(d)?.jobs ?? [])
-    .reduce((s, j) => s + (j.totalPrice ?? 0) - (j.discount ?? 0), 0);
-  const count = days.reduce((s, d) => s + (contents.get(d)?.jobs.length ?? 0), 0);
+  const all = filtered.flatMap((f) => f.day.jobs);
+  const total = all.reduce((s, j) => s + (j.totalPrice ?? 0) - (j.discount ?? 0), 0);
 
   return (
     <>
-      <p className="mb-3 text-[12.5px] text-muted-foreground">
-        <span className="font-semibold text-foreground">{count}</span> job{count === 1 ? "" : "s"} ·{" "}
+      <p className="mb-4 text-[13px] text-muted-foreground">
+        <span className="font-semibold text-foreground">{all.length}</span> job{all.length === 1 ? "" : "s"} ·{" "}
         <span className="tnum font-semibold text-foreground">{money(total)}</span> booked this week
       </p>
-
-      {/* Desktop and tablet: a real seven-column time grid. */}
-      <GlassCard className="hidden p-4 md:block lg:p-5">
-        {hasAllDay && (
-          <div className="mb-2 flex">
-            <div className="w-14 shrink-0 pt-1 text-right text-[10.5px] text-muted-foreground">
-              <span className="pr-3">All day</span>
-            </div>
-            <div className="grid flex-1 grid-cols-7">
-              {days.map((d) => (
-                <div key={d} className="min-w-0 px-1">
-                  <AllDayChips items={contents.get(d)?.allDay ?? []} compact />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <TimeGrid
-          days={days}
-          contents={contents}
-          hours={hoursShown}
-          hourHeight={56}
-          schedules={schedules}
-          today={now.date}
-          nowMinute={now.minute}
-          compact
-          onJob={onJob}
-        />
-      </GlassCard>
-
-      {/* Phones: seven columns would be 40px each. A day-by-day agenda instead. */}
-      <div className="space-y-4 md:hidden">
-        {days.map((d) => {
-          const day = contents.get(d);
-          const items = day?.timed ?? [];
-          const closed = !schedules.get(d)?.open;
-          return (
-            <section key={d}>
-              <button
-                type="button"
-                onClick={() => onDay(d)}
-                className="mb-2 flex w-full items-baseline justify-between"
-              >
-                <span
-                  className={`text-[13px] font-bold ${d === now.date ? "text-primary" : "text-foreground"}`}
+      <Timeline
+        rows={filtered.map(({ d, day }) => {
+          const off = day.allDay.find((a) => a.kind === "off");
+          const allDayEvents = day.allDay.filter((a) => a.kind === "event").length;
+          return {
+            key: d,
+            isToday: d === now.date,
+            schedule: off ? { open: false, openHour: 0, closeHour: 0 } : schedules.get(d),
+            items: day.timed,
+            empty: off && off.kind === "off" ? off.off.reason || "Day off" : undefined,
+            label: (
+              <button type="button" onClick={() => onDay(d)} className="text-left">
+                <p
+                  className={`text-[11px] font-medium ${d === now.date ? "text-[var(--st-accent)]" : "text-muted-foreground"}`}
                 >
-                  {fmt(d, { weekday: "long", month: "short", day: "numeric" })}
-                </span>
-                <span className="text-[11.5px] text-muted-foreground">
-                  {day?.jobs.length
-                    ? `${day.jobs.length} job${day.jobs.length === 1 ? "" : "s"}`
-                    : day?.allDay.some((a) => a.kind === "off")
-                      ? "Off"
-                      : closed
-                        ? "Closed"
-                        : "Open"}
-                </span>
+                  {fmt(d, { weekday: "short" })}
+                </p>
+                <p className="tnum text-[20px] font-light leading-tight text-foreground">{Number(d.slice(8))}</p>
+                {allDayEvents > 0 && <p className="text-[10px] text-muted-foreground">+{allDayEvents} all-day</p>}
               </button>
-              {day?.allDay.length ? (
-                <div className="mb-2">
-                  <AllDayChips items={day.allDay} />
-                </div>
-              ) : null}
-              {items.length ? (
-                <ul className="space-y-2">
-                  {items.map((t) => (
-                    <li key={`${t.kind}-${t.id}`} className="flex gap-3">
-                      <div className="tnum w-14 shrink-0 pt-2.5 text-right">
-                        <p className="text-[12.5px] font-semibold text-foreground">{clock(t.start, false)}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{t.start >= 720 ? "PM" : "AM"}</p>
-                      </div>
-                      {t.kind === "job" ? (
-                        <button
-                          type="button"
-                          onClick={() => onJob(t.job)}
-                          className="cal-job min-w-0 flex-1 rounded-2xl px-3.5 py-3 text-left"
-                          style={{ "--c": jobColor(t.job) } as CSSProperties}
-                        >
-                          <p className="tnum cal-ink text-[11px] font-semibold">{range(t.start, t.end)}</p>
-                          <p className="truncate text-[14.5px] font-bold text-foreground">
-                            {t.job.client?.name ?? "Client"}
-                          </p>
-                          <p className="truncate text-[12px] text-muted-foreground">
-                            {t.job.serviceTitle}
-                            {t.job.location === "mobile" ? ` · ${t.job.address ?? "Mobile"}` : " · Drop-off"}
-                          </p>
-                        </button>
-                      ) : t.kind === "event" ? (
-                        <a
-                          href={t.event.htmlLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="cal-event min-w-0 flex-1 rounded-2xl px-3.5 py-2.5"
-                        >
-                          <p className="truncate text-[13px] font-semibold text-foreground/85">{t.event.summary}</p>
-                          <p className="tnum text-[11px] text-muted-foreground">{range(t.start, t.end)} · Google</p>
-                        </a>
-                      ) : (
-                        <div className="cal-off min-w-0 flex-1 rounded-2xl px-3.5 py-2.5">
-                          <p className="cal-off-ink text-[13px] font-semibold">{t.off.reason || "Time off"}</p>
-                          <p className="tnum text-[11px] text-muted-foreground">{range(t.start, t.end)}</p>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                !day?.allDay.length && (
-                  <p className="rounded-2xl border border-dashed border-[var(--line-2)] px-4 py-3 text-[12px] text-muted-foreground">
-                    {closed ? "Closed" : "Nothing booked"}
-                  </p>
-                )
-              )}
-            </section>
-          );
+            ),
+          };
         })}
-      </div>
+        hours={hours}
+        minHourPx={96}
+        laneHeight={64}
+        labelWidth={60}
+        nowMinute={now.minute}
+        compact
+        onJob={onJob}
+      />
     </>
   );
 }
 
-function MonthView({
+function MonthBody({
   anchor,
   days,
   contents,
+  filter,
   schedules,
   today,
   onDay,
@@ -872,145 +890,125 @@ function MonthView({
   anchor: string;
   days: string[];
   contents: Map<string, DayContents>;
+  filter: Filter;
   schedules: Map<string, Hours | undefined>;
   today: string;
   onDay: (d: string) => void;
 }) {
   const month = anchor.slice(0, 7);
-  const inMonth = days.filter((d) => d.startsWith(month));
-  const jobsInMonth = inMonth.flatMap((d) => contents.get(d)?.jobs ?? []);
+  const jobsInMonth = days
+    .filter((d) => d.startsWith(month))
+    .flatMap((d) => filterDay(contents.get(d), filter).jobs);
   const total = jobsInMonth.reduce((s, j) => s + (j.totalPrice ?? 0) - (j.discount ?? 0), 0);
 
   return (
     <>
-      <p className="mb-3 text-[12.5px] text-muted-foreground">
+      <p className="mb-4 text-[13px] text-muted-foreground">
         <span className="font-semibold text-foreground">{jobsInMonth.length}</span> job
         {jobsInMonth.length === 1 ? "" : "s"} ·{" "}
         <span className="tnum font-semibold text-foreground">{money(total)}</span> booked in{" "}
         {fmt(anchor, { month: "long" })}
       </p>
-      <GlassCard className="p-2.5 sm:p-5">
-        <div className="mb-1.5 grid grid-cols-7 gap-1 sm:gap-2">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <p
+      <div className="mb-2 grid grid-cols-7 gap-1.5 sm:gap-2.5">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <p key={i} className="text-center text-[11px] font-medium text-muted-foreground">
+            {d}
+          </p>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5">
+        {days.map((d, i) => {
+          const day = filterDay(contents.get(d), filter);
+          const outside = !d.startsWith(month);
+          const off = day.allDay.find((a) => a.kind === "off");
+          const closed = !schedules.get(d)?.open || Boolean(off);
+          const others =
+            day.timed.filter((t) => t.kind === "event").length +
+            day.allDay.filter((a) => a.kind === "event").length;
+          const isToday = d === today;
+          return (
+            <motion.button
               key={d}
-              className="py-1 text-center text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+              type="button"
+              initial={{ opacity: 0, scale: 0.95 }}
+              // Opacity lives here, not in a class: Motion's inline style
+              // would override an `opacity-*` and un-dim other months' days.
+              animate={{
+                opacity: outside ? 0.35 : 1,
+                scale: 1,
+                transition: { delay: Math.min(i * 0.006, 0.2) },
+              }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => onDay(d)}
+              className={`flex min-h-[64px] flex-col rounded-2xl p-1.5 text-left sm:min-h-[118px] sm:rounded-3xl sm:p-2.5 ${
+                closed ? "cal-glass-ghost" : "cal-glass"
+              } ${isToday ? "ring-2 ring-[var(--st-accent)]" : ""}`}
             >
-              <span className="sm:hidden">{d[0]}</span>
-              <span className="hidden sm:inline">{d}</span>
-            </p>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1 sm:gap-2">
-          {days.map((d, i) => {
-            const day = contents.get(d);
-            const jobs = day?.jobs ?? [];
-            const others =
-              (day?.timed ?? []).filter((t) => t.kind === "event").length +
-              (day?.allDay ?? []).filter((a) => a.kind === "event").length;
-            const dayOff = day?.allDay.find((a) => a.kind === "off");
-            const isToday = d === today;
-            const outside = !d.startsWith(month);
-            const off = !schedules.get(d)?.open || day?.allDay.some((a) => a.kind === "off");
-            return (
-              <motion.button
-                key={d}
-                type="button"
-                initial={{ opacity: 0, scale: 0.96 }}
-                // Opacity lives here, not in a class: Motion's inline style
-                // would override an `opacity-40` and un-dim other months' days.
-                animate={{
-                  opacity: outside ? 0.4 : 1,
-                  scale: 1,
-                  transition: { delay: Math.min(i * 0.006, 0.2) },
-                }}
-                whileTap={{ scale: 0.96 }}
-                onClick={() => onDay(d)}
-                className={`flex min-h-[58px] flex-col rounded-xl border p-1.5 text-left transition-colors sm:min-h-[112px] sm:rounded-2xl sm:p-2 ${
-                  isToday
-                    ? "border-primary/60 bg-primary/[0.06]"
-                    : off
-                      ? "cal-closed border-[var(--line-1)]"
-                      : "border-[var(--line-1)] bg-[var(--fill-1)] hover:border-[var(--line-3)] hover:bg-[var(--fill-2)]"
-                }`}
+              <span
+                className={`tnum text-[13px] font-semibold sm:text-[15px] ${isToday ? "text-[var(--st-accent)]" : "text-foreground"}`}
               >
-                <span
-                  className={`tnum inline-flex h-6 w-6 items-center justify-center self-start rounded-full text-[12px] font-bold ${
-                    isToday ? "text-primary-foreground" : "text-foreground"
-                  }`}
-                  style={isToday ? { backgroundImage: "var(--gradient-brand)" } : undefined}
-                >
-                  {Number(d.slice(8))}
-                </span>
+                {Number(d.slice(8))}
+              </span>
 
-                {/* Phones: one coloured bar per job. */}
-                <div className="mt-auto flex flex-wrap gap-0.5 sm:hidden">
-                  {jobs.slice(0, 3).map((j) => (
-                    <span
-                      key={j.id}
-                      className="cal-dot h-1.5 w-1.5 rounded-full"
-                      style={{ "--c": jobColor(j) } as CSSProperties}
-                    />
-                  ))}
-                  {others > 0 && <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />}
-                </div>
+              {/* Phones: a dot per job. */}
+              <span className="mt-auto flex flex-wrap gap-[3px] sm:hidden">
+                {day.jobs.slice(0, 3).map((j) => (
+                  <span key={j.id} className="h-1.5 w-1.5 rounded-full" style={{ background: jobColor(j) }} />
+                ))}
+                {off && <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
+              </span>
 
-                {/* Larger screens: who and when. */}
-                <div className="mt-1.5 hidden min-w-0 space-y-1 sm:block">
-                  {jobs.slice(0, 3).map((j) => (
-                    <div
-                      key={j.id}
-                      className="cal-job truncate rounded-md px-1.5 py-[3px] text-[10.5px] font-semibold text-foreground"
-                      style={{ "--c": jobColor(j) } as CSSProperties}
-                      title={`${clock(toMinutes(j.startTime))} ${j.client?.name ?? ""} — ${j.serviceTitle}`}
-                    >
-                      <span className="tnum cal-ink">{clock(toMinutes(j.startTime), false)}</span>{" "}
-                      {j.client?.name?.split(" ")[0] ?? ""}
-                    </div>
-                  ))}
-                  {jobs.length > 3 && (
-                    <p className="px-1 text-[10.5px] font-semibold text-primary">+{jobs.length - 3} more</p>
-                  )}
-                  {dayOff && dayOff.kind === "off" && (
-                    <p className="cal-off cal-off-ink truncate rounded-md px-1.5 py-[3px] text-[10.5px] font-semibold">
-                      {dayOff.off.reason || "Day off"}
-                    </p>
-                  )}
-                  {jobs.length <= 2 && others > 0 && (
-                    <p className="truncate px-1 text-[10.5px] text-muted-foreground">
-                      {others} other event{others === 1 ? "" : "s"}
-                    </p>
-                  )}
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
-      </GlassCard>
+              {/* Larger screens: who and when. */}
+              <div className="mt-1.5 hidden min-w-0 space-y-1 sm:block">
+                {day.jobs.slice(0, 3).map((j) => (
+                  <p
+                    key={j.id}
+                    className="flex min-w-0 items-center gap-1.5 truncate rounded-full bg-[var(--fill-2)] px-2 py-[3px] text-[11px] text-foreground/90"
+                    title={`${clock(toMinutes(j.startTime))} ${j.client?.name ?? ""} — ${j.serviceTitle}`}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: jobColor(j) }} />
+                    <span className="tnum text-muted-foreground">{clock(toMinutes(j.startTime), false)}</span>
+                    <span className="truncate">{j.client?.name?.split(" ")[0] ?? ""}</span>
+                  </p>
+                ))}
+                {day.jobs.length > 3 && (
+                  <p className="px-2 text-[10.5px] font-semibold text-muted-foreground">+{day.jobs.length - 3} more</p>
+                )}
+                {off && off.kind === "off" && (
+                  <p className="truncate px-1 text-[10.5px] font-semibold cal-off-ink">
+                    {off.off.reason || "Day off"}
+                  </p>
+                )}
+                {day.jobs.length <= 2 && others > 0 && (
+                  <p className="truncate px-1 text-[10.5px] text-muted-foreground">
+                    {others} other event{others === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+            </motion.button>
+          );
+        })}
+      </div>
     </>
   );
 }
 
 function Legend({ googleConnected }: { googleConnected: boolean }) {
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11.5px] text-muted-foreground">
+    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
       {PACKAGE_LEGEND.map((p) => (
         <span key={p.label} className="inline-flex items-center gap-1.5">
-          <span className="cal-dot h-2.5 w-2.5 rounded-full" style={{ "--c": p.color } as CSSProperties} />
+          <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
           {p.label}
         </span>
       ))}
       <span className="inline-flex items-center gap-1.5">
-        <span className="cal-event h-2.5 w-3.5 rounded" />
-        {googleConnected ? "Google Calendar" : "Google not connected"}
+        <span className="cal-glass-ghost h-2 w-3 rounded" />
+        {googleConnected ? "Google" : "Google not connected"}
       </span>
       <span className="inline-flex items-center gap-1.5">
-        <span className="cal-off h-2.5 w-3.5 rounded" />
+        <span className="cal-off-band h-2 w-3 rounded" />
         Time off
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="cal-closed h-2.5 w-3.5 rounded border border-[var(--line-2)]" />
-        Outside hours
       </span>
     </div>
   );
@@ -1036,7 +1034,9 @@ function JobPanel({ job, onClose }: { job: Job | null; onClose: () => void }) {
       title={job?.client?.name ?? "Booking"}
       footer={
         <Link to="/admin/appointments" className="block">
-          <Button variant="primary" className="w-full">Manage in Appointments</Button>
+          <Button variant="primary" className="w-full">
+            Manage in Appointments
+          </Button>
         </Link>
       }
     >

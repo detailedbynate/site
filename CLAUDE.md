@@ -194,14 +194,18 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
 
 25. **CSS gotcha — use `overflow: clip`, not `hidden`, on anything with a translated `::after`.** The `sheen` and `btn-liquid` utilities have a decorative `::after` at `translateX(-120%)`. A transform contributes to an element's *scrollable overflow region*, and `overflow: hidden` still creates a scroll container — so focusing a child (tabbing to a time slot) made the browser scroll the whole wizard panel ~250px sideways and shove its content out of view. `overflow: clip` clips identically but never becomes scrollable. There are comments on both utilities in `styles.css`; don't "tidy" them back to `hidden`.
 
-26. **Admin calendar is a time grid, not a month list.** `/admin/calendar` has Day / Week / Month
-    views. Day and Week place every job by the clock (top = start, height = duration) via
-    `src/components/admin/calendar/TimeGrid.tsx`; overlapping jobs split into lanes
-    (`placeLanes` in `calendar/model.ts`) so a double-booking is visible, never hidden. Time off
-    is a see-through striped overlay ABOVE jobs rather than a lane beside them, so a lunch break
-    never squeezes a job to half width. Package colours come from `jobColor()` and are applied
-    as `--c` through the `.cal-*` classes in `styles.css`, which mix into `--card` so one rule
-    works in both admin themes. On phones, Week becomes a day-by-day agenda.
+26. **Admin calendar is a frosted "stage" with a horizontal timeline.** `/admin/calendar` follows
+    the owner's reference design: Today/Day/Week/Month pill bar, tall day capsules, a Working-hours
+    switch (fit the axis to opening hours, or show 6 AM–10 PM) and an event filter, then a
+    timeline with hours running ACROSS and jobs as glass cards (left = start, width = duration),
+    in `src/components/admin/calendar/Timeline.tsx`. Week is the same component with one row per
+    day, like a dispatch board. Overlapping jobs split into lanes (`placeLanes` in
+    `calendar/model.ts`); time off is a see-through band above jobs, never a lane beside them.
+    Phones scroll the track sideways (min px per hour); from `md` it shrinks to fit the day.
+    **Colours come only from the admin theme tokens** (`.cal-stage` / `.cal-*` in `styles.css`),
+    after a first pass with its own warm palette looked off-brand. Gotcha: mix colours with
+    `transparent` in **srgb**, not oklch — oklch dragged the hue toward red and tinted the dark
+    theme brown.
 
 ## File map — everything added/changed this session
 
