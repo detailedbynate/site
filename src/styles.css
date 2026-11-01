@@ -133,11 +133,16 @@
   --fill-3: oklch(1 0 0 / 0.09);
   --scrim: oklch(0 0 0 / 0.6);
 
-  /* Drifting background washes. Deliberately weak — these sit under dense
+  /* Drifting background washes. Deliberately weak. The softness is baked
+     into a long eased fall-off rather than a CSS blur filter: a 150px blur on
+     a moving layer is re-applied on every frame it drifts, which measured as
+     ~10x the frame cost of everything else in the admin combined. A gradient
+     is drawn once and simply moved. */
+  /* Deliberately weak — these sit under dense
      tables, so anything stronger fights the text for attention. */
-  --ambient-1: radial-gradient(circle, oklch(0.55 0.16 258 / 0.16), transparent 70%);
-  --ambient-2: radial-gradient(circle, oklch(0.5 0.14 235 / 0.13), transparent 70%);
-  --ambient-3: radial-gradient(circle, oklch(0.45 0.13 275 / 0.11), transparent 70%);
+  --ambient-1: radial-gradient(circle closest-side, oklch(0.55 0.16 258 / 0.16) 0%, color-mix(in srgb, oklch(0.55 0.16 258 / 0.16) 60%, transparent) 38%, color-mix(in srgb, oklch(0.55 0.16 258 / 0.16) 22%, transparent) 66%, transparent 100%);
+  --ambient-2: radial-gradient(circle closest-side, oklch(0.5 0.14 235 / 0.13) 0%, color-mix(in srgb, oklch(0.5 0.14 235 / 0.13) 60%, transparent) 38%, color-mix(in srgb, oklch(0.5 0.14 235 / 0.13) 22%, transparent) 66%, transparent 100%);
+  --ambient-3: radial-gradient(circle closest-side, oklch(0.45 0.13 275 / 0.11) 0%, color-mix(in srgb, oklch(0.45 0.13 275 / 0.11) 60%, transparent) 38%, color-mix(in srgb, oklch(0.45 0.13 275 / 0.11) 22%, transparent) 66%, transparent 100%);
   /* A cool blue tilt across the whole page, darkest bottom-right. */
   --ambient-base: linear-gradient(
     160deg,
@@ -210,8 +215,7 @@
 
 .admin-theme.admin-light .glass,
 :root.admin-light .admin-theme .glass {
-  background: oklch(1 0 0 / 0.75);
-  backdrop-filter: blur(14px) saturate(120%);
+  background: oklch(1 0 0 / 0.86);
   border: 1px solid var(--line-1);
   box-shadow: none;
 }
@@ -226,9 +230,9 @@
 :root.admin-light .admin-theme {
   /* Same idea in light mode, an order of magnitude softer — colour reads far
      more strongly against white than it does against near-black. */
-  --ambient-1: radial-gradient(circle, oklch(0.62 0.14 258 / 0.1), transparent 70%);
-  --ambient-2: radial-gradient(circle, oklch(0.66 0.12 232 / 0.085), transparent 70%);
-  --ambient-3: radial-gradient(circle, oklch(0.6 0.12 275 / 0.07), transparent 70%);
+  --ambient-1: radial-gradient(circle closest-side, oklch(0.62 0.14 258 / 0.1) 0%, color-mix(in srgb, oklch(0.62 0.14 258 / 0.1) 60%, transparent) 38%, color-mix(in srgb, oklch(0.62 0.14 258 / 0.1) 22%, transparent) 66%, transparent 100%);
+  --ambient-2: radial-gradient(circle closest-side, oklch(0.66 0.12 232 / 0.085) 0%, color-mix(in srgb, oklch(0.66 0.12 232 / 0.085) 60%, transparent) 38%, color-mix(in srgb, oklch(0.66 0.12 232 / 0.085) 22%, transparent) 66%, transparent 100%);
+  --ambient-3: radial-gradient(circle closest-side, oklch(0.6 0.12 275 / 0.07) 0%, color-mix(in srgb, oklch(0.6 0.12 275 / 0.07) 60%, transparent) 38%, color-mix(in srgb, oklch(0.6 0.12 275 / 0.07) 22%, transparent) 66%, transparent 100%);
   --ambient-base: linear-gradient(
     160deg,
     oklch(0.985 0.008 250) 0%,
@@ -262,6 +266,10 @@
 @keyframes admin-drift-3 {
   50% { transform: translate3d(40px, -40px, 0) scale(1.06); }
 }
+/* Each wash gets its own compositor layer: its huge blur is rasterised once
+   and the drift just moves the finished bitmap, instead of re-blurring a
+   600px circle on every frame. */
+.admin-theme .ambient { will-change: transform; }
 .ambient-drift-1 { animation: admin-drift-1 34s ease-in-out infinite; }
 .ambient-drift-2 { animation: admin-drift-2 42s ease-in-out 3s infinite; }
 .ambient-drift-3 { animation: admin-drift-3 50s ease-in-out 6s infinite; }
@@ -274,8 +282,11 @@
   underneath everything else.
 */
 @media (max-width: 1023px) {
+  /* And they hold still on phones: a background that is never more than a
+     tint is not worth keeping a battery-powered GPU awake for. */
   .admin-theme .ambient {
     filter: none;
+    animation: none;
   }
 }
 
@@ -331,19 +342,35 @@
 }
 
 /* Softer, flatter panels than the storefront's liquid-glass. */
+/*
+  No backdrop-filter on admin panels. The ground behind them is three slow,
+  already heavily blurred colour washes, so frosting them again was nearly
+  invisible — but it was not free: every drifting frame of the background
+  forced every card on screen to re-blur, keeping the GPU busy on a page you
+  were only reading. A slightly more opaque fill gives the same look for the
+  cost of one flat paint.
+*/
 .admin-theme .liquid-glass,
 .admin-theme .glass-strong {
-  background: oklch(0.235 0.013 258 / 0.72);
-  backdrop-filter: blur(20px) saturate(140%);
+  background: oklch(0.235 0.013 258 / 0.8);
   border: 1px solid oklch(1 0 0 / 0.07);
   box-shadow: var(--shadow-glass);
 }
 
 .admin-theme .glass {
-  background: oklch(0.235 0.013 258 / 0.6);
-  backdrop-filter: blur(18px) saturate(140%);
+  background: oklch(0.235 0.013 258 / 0.7);
   border: 1px solid oklch(1 0 0 / 0.06);
   box-shadow: none;
+}
+
+/*
+  Taps respond on touch-up immediately: `manipulation` drops the double-tap
+  zoom wait some mobile browsers still apply, and the grey tap flash is
+  replaced by each control's own pressed state.
+*/
+.admin-theme {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Tabular figures keep money columns from jittering as values change. */
@@ -587,16 +614,20 @@
    exactly as designed.
    -------------------------------------------------------------------------- */
 @media (max-width: 1023px) {
-  .glass,
-  .admin-theme .glass {
+  .glass {
     backdrop-filter: blur(10px) saturate(170%);
   }
 
   .liquid-glass,
-  .glass-strong,
+  .glass-strong {
+    backdrop-filter: blur(12px) saturate(175%);
+  }
+
+  /* Admin panels stay unblurred at every size (see .admin-theme .liquid-glass). */
+  .admin-theme .glass,
   .admin-theme .liquid-glass,
   .admin-theme .glass-strong {
-    backdrop-filter: blur(12px) saturate(175%);
+    backdrop-filter: none;
   }
 
   /*
@@ -1149,8 +1180,6 @@ body:has(.site) {
 .cal-frost {
   background: var(--st-glass);
   border: 1px solid var(--st-glass-line);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
   color: var(--st-ink);
 }
 /* Selected pill: inverted — white on dark, near-black on light. */
@@ -1161,11 +1190,12 @@ body:has(.site) {
 }
 
 /* Cards. */
+/* No backdrop-filter anywhere on the stage: it sits on a flat gradient, so
+   there is nothing to frost, and a dozen blurred cards sliding at once is
+   exactly where a phone drops frames. */
 .cal-glass {
-  background: color-mix(in srgb, var(--card) 82%, transparent);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
   border: 1px solid var(--line-2);
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
   box-shadow: inset 0 1px 0 var(--line-1), 0 14px 30px -20px oklch(0 0 0 / 0.55);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
@@ -1204,11 +1234,33 @@ body:has(.site) {
 .cal-row-label > * {
   border-radius: 0.9rem;
   padding: 0.3rem 0.55rem;
-  background: color-mix(in srgb, var(--card) 75%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
 }
 .cal-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-3) transparent;
+}
+
+/* Calendar press feedback and first-paint fade — CSS, so they cost nothing
+   until used and run on the compositor when they do. */
+.cal-press {
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+@media (hover: hover) {
+  .cal-press:hover {
+    transform: translate3d(0, -2px, 0);
+  }
+}
+.cal-press:active {
+  transform: scale(0.975);
+  transition-duration: 0.08s;
+}
+@keyframes cal-enter {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to { opacity: 1; transform: none; }
+}
+.cal-enter {
+  /* `backwards`, not `both`: a held end-state would override the hover lift. */
+  animation: cal-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }

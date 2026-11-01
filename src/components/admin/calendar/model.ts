@@ -71,43 +71,53 @@ export function monthGrid(iso: string): string[] {
   return out;
 }
 
+/*
+  Formatter caches. Building an Intl.DateTimeFormat is one of the slowest
+  things in the JS standard library — tenths of a millisecond each — and
+  laying out a month used to build one per event per visible day: thousands
+  per click once a real Google calendar was connected. Each distinct set of
+  options is now built once and reused for the life of the page.
+*/
+const fmtCache = new Map<string, Intl.DateTimeFormat>();
+function formatter(locale: string, opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = locale + JSON.stringify(opts);
+  let f = fmtCache.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, opts);
+    fmtCache.set(key, f);
+  }
+  return f;
+}
+
 export function fmt(iso: string, opts: Intl.DateTimeFormatOptions): string {
-  return dateOf(iso).toLocaleDateString("en-US", opts);
+  return formatter("en-US", opts).format(dateOf(iso));
+}
+
+/** Wall-clock date and minute of an instant in `timeZone`. */
+function zoned(instant: Date, timeZone: string): { date: string; minute: number } {
+  const parts = formatter("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  let y = "", mo = "", d = "", h = "0", mi = "0";
+  for (const p of parts) {
+    if (p.type === "year") y = p.value;
+    else if (p.type === "month") mo = p.value;
+    else if (p.type === "day") d = p.value;
+    else if (p.type === "hour") h = p.value;
+    else if (p.type === "minute") mi = p.value;
+  }
+  return { date: `${y}-${mo}-${d}`, minute: Number(h) * 60 + Number(mi) };
 }
 
 /** Today's date and the current minute, on the shop's clock. */
 export function nowInZone(timeZone: string): { date: string; minute: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date());
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
-  return {
-    date: `${get("year")}-${get("month")}-${get("day")}`,
-    minute: Number(get("hour")) * 60 + Number(get("minute")),
-  };
-}
-
-function instantInZone(isoInstant: string, timeZone: string): { date: string; minute: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(isoInstant));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
-  return {
-    date: `${get("year")}-${get("month")}-${get("day")}`,
-    minute: Number(get("hour")) * 60 + Number(get("minute")),
-  };
+  return zoned(new Date(), timeZone);
 }
 
 // --------------------------- time of day ----------------------------------
@@ -179,60 +189,77 @@ export interface DayContents {
 }
 
 /**
- * Everything on one day, split into timeline blocks and all-day strips.
+ * Everything on each of `dates`, split into timeline blocks and all-day strips.
+ *
+ * One pass over the inputs, not one per day: jobs are bucketed by date and
+ * every Google event is converted to the shop's timezone exactly once, then
+ * each day only does arithmetic. The old per-day version re-scanned every job
+ * and re-converted every event for each of the ~42 days on screen.
  *
  * Google events the site itself created for a booking are dropped — they
  * would otherwise show twice, once as the job and once as its calendar copy.
  */
-export function contentsFor(
-  date: string,
+export function buildContents(
+  dates: Iterable<string>,
   jobs: Job[],
   events: GEvent[],
   timeOff: TimeOffEntry[],
   timeZone: string,
-): DayContents {
-  const dayJobs = jobs
-    .filter((j) => j.date === date && j.status !== "cancelled")
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+): Map<string, DayContents> {
+  const out = new Map<string, DayContents>();
+  for (const d of dates) out.set(d, { timed: [], allDay: [], jobs: [] });
 
-  const ours = new Set(jobs.map((j) => j.googleEventId).filter(Boolean));
-  const timed: TimedItem[] = dayJobs.map((job) => {
-    const start = toMinutes(job.startTime);
-    return { kind: "job", id: job.id, start, end: start + job.durationMinutes, job };
-  });
-  const allDay: AllDayItem[] = [];
+  const ours = new Set<string>();
+  for (const j of jobs) {
+    if (j.googleEventId) ours.add(j.googleEventId);
+    if (j.status === "cancelled") continue;
+    const day = out.get(j.date);
+    if (!day) continue;
+    day.jobs.push(j);
+    const start = toMinutes(j.startTime);
+    day.timed.push({ kind: "job", id: j.id, start, end: start + j.durationMinutes, job: j });
+  }
 
   for (const e of events) {
     if (ours.has(e.id)) continue;
     if (e.allDay) {
       // end.date is exclusive, so a one-day event covers only its own date.
-      const last = addDays(instantInZone(e.endISO, timeZone).date, -1);
-      if (e.date <= date && date <= last) allDay.push({ kind: "event", id: e.id, event: e });
+      const last = addDays(zoned(new Date(e.endISO), timeZone).date, -1);
+      for (const [d, day] of out) {
+        if (e.date <= d && d <= last) day.allDay.push({ kind: "event", id: e.id, event: e });
+      }
       continue;
     }
-    const s = instantInZone(e.startISO, timeZone);
-    const f = instantInZone(e.endISO, timeZone);
-    if (s.date > date || f.date < date) continue;
-    const start = s.date < date ? 0 : s.minute;
-    const end = f.date > date ? 24 * 60 : f.minute;
-    if (end > start) timed.push({ kind: "event", id: e.id, start, end, event: e });
+    const s = zoned(new Date(e.startISO), timeZone);
+    const f = zoned(new Date(e.endISO), timeZone);
+    for (const [d, day] of out) {
+      if (s.date > d || f.date < d) continue;
+      const start = s.date < d ? 0 : s.minute;
+      const end = f.date > d ? 24 * 60 : f.minute;
+      if (end > start) day.timed.push({ kind: "event", id: e.id, start, end, event: e });
+    }
   }
 
   for (const t of timeOff) {
-    if (t.startDate > date || t.endDate < date) continue;
-    if (t.allDay) allDay.push({ kind: "off", id: t.id, off: t });
-    else
-      timed.push({
-        kind: "off",
-        id: t.id,
-        start: toMinutes(t.startTime),
-        end: toMinutes(t.endTime),
-        off: t,
-      });
+    for (const [d, day] of out) {
+      if (t.startDate > d || t.endDate < d) continue;
+      if (t.allDay) day.allDay.push({ kind: "off", id: t.id, off: t });
+      else
+        day.timed.push({
+          kind: "off",
+          id: t.id,
+          start: toMinutes(t.startTime),
+          end: toMinutes(t.endTime),
+          off: t,
+        });
+    }
   }
 
-  timed.sort((a, b) => a.start - b.start || b.end - a.end);
-  return { timed, allDay, jobs: dayJobs };
+  for (const day of out.values()) {
+    day.jobs.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    day.timed.sort((a, b) => a.start - b.start || b.end - a.end);
+  }
+  return out;
 }
 
 /**

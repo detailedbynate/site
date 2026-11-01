@@ -205,7 +205,7 @@ function FormFields() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setDraft(null)}
-              className="admin-theme fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]"
+              className="admin-theme fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
             >
               <motion.div
                 initial={{ scale: 0.96, y: 16 }}

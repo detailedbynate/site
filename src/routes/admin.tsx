@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   Blocks,
   CalendarDays,
@@ -437,6 +437,9 @@ function AdminLayout() {
   );
 
   return (
+    // reducedMotion="user": every Motion animation in the admin honours the
+    // device's "reduce motion" setting (the CSS loops already did).
+    <MotionConfig reducedMotion="user">
     <div ref={themeRef} className="admin-theme relative flex min-h-screen">
       {/*
         Ambient background. Three very low-opacity washes that drift slowly on
@@ -450,20 +453,22 @@ function AdminLayout() {
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="admin-ambient-base absolute inset-0" />
         {/* Drift is CSS keyframes, not Motion: the compositor runs them off
-            the main thread, so they never compete with a tap or a page render. */}
+            the main thread, so they never compete with a tap or a page render.
+            No `blur-*` filter: the gradients carry their own soft edge (see
+            --ambient-* in styles.css), so moving them costs nothing per frame. */}
         <div
           aria-hidden
-          className="ambient ambient-drift-1 absolute -left-48 -top-72 h-[620px] w-[620px] rounded-full blur-[150px]"
+          className="ambient ambient-drift-1 absolute -left-[342px] -top-[438px] h-[920px] w-[920px] rounded-full"
           style={{ background: "var(--ambient-1)" }}
         />
         <div
           aria-hidden
-          className="ambient ambient-drift-2 absolute -right-56 top-1/4 h-[560px] w-[560px] rounded-full blur-[160px]"
+          className="ambient ambient-drift-2 absolute -right-[384px] top-[calc(25%-160px)] h-[880px] w-[880px] rounded-full"
           style={{ background: "var(--ambient-2)" }}
         />
         <div
           aria-hidden
-          className="ambient ambient-drift-3 absolute -bottom-72 left-1/3 h-[600px] w-[600px] rounded-full blur-[170px]"
+          className="ambient ambient-drift-3 absolute -bottom-[458px] left-[calc(33.333%-170px)] h-[940px] w-[940px] rounded-full"
           style={{ background: "var(--ambient-3)" }}
         />
       </div>
@@ -472,7 +477,7 @@ function AdminLayout() {
       <motion.aside
         animate={{ width: collapsed ? 84 : 260 }}
         transition={{ type: "spring", stiffness: 260, damping: 30 }}
-        className="admin-panel sticky top-0 z-30 hidden h-screen shrink-0 border-r border-[var(--line-1)] bg-[var(--fill-1)] backdrop-blur-2xl lg:block"
+        className="admin-panel sticky top-0 z-30 hidden h-screen shrink-0 border-r border-[var(--line-1)] bg-[var(--fill-1)] lg:block"
       >
         {renderSidebar(false)}
         <button
@@ -516,7 +521,7 @@ function AdminLayout() {
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-[var(--line-1)] bg-[var(--background)]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-[var(--line-1)] bg-[var(--background)]/95 px-4 py-3 lg:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -557,5 +562,6 @@ function AdminLayout() {
         <BottomNav />
       </div>
     </div>
+    </MotionConfig>
   );
 }
