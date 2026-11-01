@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { Ban, CheckCircle2, ExternalLink, MapPin, Store } from "lucide-react";
 
 import { money } from "@/components/admin/ui";
@@ -42,10 +42,34 @@ export function DayColumn({
   onJob: (job: Job) => void;
 }) {
   const height = (toHour - fromHour) * hourHeight;
+  const root = useRef<HTMLDivElement>(null);
   const y = (min: number) =>
     ((Math.min(Math.max(min, fromHour * 60), toHour * 60) - fromHour * 60) / 60) * hourHeight;
   const offs = items.filter((t) => t.kind === "off");
   const placed = placeLanes(items.filter((t) => t.kind !== "off"));
+  /*
+    Open where the day is happening, as Google and Apple Calendar do: at "now"
+    on today, otherwise just above the first job, otherwise at opening time.
+    Scrolls the calendar's own scroll area (data-cal-scroll), not the page.
+  */
+  const firstJob = placed.find((p) => p.kind === "job")?.start;
+  const target =
+    isToday && nowMinute > fromHour * 60 && nowMinute < toHour * 60
+      ? nowMinute - 60
+      : firstJob !== undefined
+        ? firstJob - 30
+        : (schedule?.open ? schedule.openHour : fromHour) * 60;
+  useLayoutEffect(() => {
+    const el = root.current;
+    const scroller = el?.closest<HTMLElement>("[data-cal-scroll]");
+    if (!el || !scroller) return;
+    const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    scroller.scrollTop = Math.max(0, offset + y(target) - 8);
+    // Once per day shown — not on every "now" tick, which would yank the
+    // view back while you are scrolling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromHour, toHour, isToday, firstJob]);
+
   const closed: [number, number][] = !schedule?.open
     ? [[fromHour, toHour]]
     : [
@@ -54,7 +78,7 @@ export function DayColumn({
       ];
 
   return (
-    <div className="flex">
+    <div ref={root} className="flex">
       {/* Hour gutter */}
       <div className="relative w-12 shrink-0" style={{ height }}>
         {Array.from({ length: toHour - fromHour + 1 }, (_, i) => fromHour + i).map((h, i) => (

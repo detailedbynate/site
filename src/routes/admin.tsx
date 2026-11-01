@@ -550,7 +550,10 @@ function AdminLayout() {
           `key` still forces a fresh mount per route, which is what resets
           scroll-independent state.
         */}
-        <main className="min-h-[calc(100vh-1px)] px-4 pb-28 pt-8 sm:px-8 lg:px-10 lg:pb-8">
+        {/* Below lg the 59px top bar sits above <main>, so a full-screen
+            min-height made EVERY page scroll by the bar's height. dvh also
+            tracks iOS Safari's collapsing toolbar. */}
+        <main className="min-h-[calc(100dvh-60px)] px-4 pb-28 pt-8 sm:px-8 lg:min-h-[calc(100vh-1px)] lg:px-10 lg:pb-8">
           {/* CSS keyframes for the same reason as the drawer: they keep
               running on the compositor while the new page mounts. */}
           <div key={pathname} className="admin-page-in">
