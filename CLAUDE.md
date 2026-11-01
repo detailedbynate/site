@@ -194,6 +194,15 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
 
 25. **CSS gotcha — use `overflow: clip`, not `hidden`, on anything with a translated `::after`.** The `sheen` and `btn-liquid` utilities have a decorative `::after` at `translateX(-120%)`. A transform contributes to an element's *scrollable overflow region*, and `overflow: hidden` still creates a scroll container — so focusing a child (tabbing to a time slot) made the browser scroll the whole wizard panel ~250px sideways and shove its content out of view. `overflow: clip` clips identically but never becomes scrollable. There are comments on both utilities in `styles.css`; don't "tidy" them back to `hidden`.
 
+26. **Admin calendar is a time grid, not a month list.** `/admin/calendar` has Day / Week / Month
+    views. Day and Week place every job by the clock (top = start, height = duration) via
+    `src/components/admin/calendar/TimeGrid.tsx`; overlapping jobs split into lanes
+    (`placeLanes` in `calendar/model.ts`) so a double-booking is visible, never hidden. Time off
+    is a see-through striped overlay ABOVE jobs rather than a lane beside them, so a lunch break
+    never squeezes a job to half width. Package colours come from `jobColor()` and are applied
+    as `--c` through the `.cal-*` classes in `styles.css`, which mix into `--card` so one rule
+    works in both admin themes. On phones, Week becomes a day-by-day agenda.
+
 ## File map — everything added/changed this session
 
 ```

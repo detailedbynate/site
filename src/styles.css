@@ -1016,3 +1016,79 @@ body:has(.site) {
   font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.02em;
 }
+
+/* ---------------------------------------------------------------------------
+   Admin calendar (/admin/calendar). Blocks are tinted from their package
+   colour (--c, set inline) mixed into the card colour, so the same rule reads
+   on both the dark and light admin grounds without a per-theme palette.
+   --------------------------------------------------------------------------- */
+.cal-job {
+  background: color-mix(in oklch, var(--c) 17%, var(--card));
+  border: 1px solid color-mix(in oklch, var(--c) 36%, transparent);
+  box-shadow: inset 3px 0 0 var(--c), 0 6px 18px -12px color-mix(in oklch, var(--c) 70%, transparent);
+  transition: background-color 0.15s ease;
+}
+.cal-job:hover {
+  background: color-mix(in oklch, var(--c) 24%, var(--card));
+}
+.cal-ink {
+  color: color-mix(in oklch, var(--c) 72%, var(--foreground));
+}
+.cal-dot {
+  background: var(--c);
+}
+.cal-event {
+  background: var(--fill-2);
+  border: 1px dashed var(--line-3);
+}
+.cal-event:hover {
+  background: var(--fill-3);
+}
+.cal-off {
+  background: repeating-linear-gradient(
+    135deg,
+    oklch(0.78 0.14 75 / 0.16) 0 6px,
+    oklch(0.78 0.14 75 / 0.05) 6px 12px
+  );
+  border: 1px solid oklch(0.78 0.14 75 / 0.38);
+}
+.cal-off-ink {
+  color: oklch(0.84 0.12 80);
+}
+.admin-theme.admin-light .cal-off-ink,
+:root.admin-light .admin-theme .cal-off-ink {
+  color: oklch(0.52 0.13 60);
+}
+/* Outside business hours: quiet diagonal hatching, not a solid block, so
+   a job booked outside hours still reads clearly on top of it. */
+.cal-closed {
+  background: repeating-linear-gradient(135deg, var(--fill-2) 0 3px, transparent 3px 9px);
+}
+.cal-quick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 1rem;
+  border: 1px solid var(--line-2);
+  background: var(--fill-1);
+  padding: 0.75rem 0.5rem;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+  transition: background-color 0.15s ease;
+}
+.cal-quick:hover {
+  background: var(--fill-3);
+}
+.cal-off-overlay {
+  background: repeating-linear-gradient(
+    135deg,
+    oklch(0.78 0.14 75 / 0.18) 0 6px,
+    transparent 6px 12px
+  );
+}
+.cal-off-tag {
+  background: color-mix(in oklch, oklch(0.78 0.14 75) 18%, var(--card));
+  border: 1px solid oklch(0.78 0.14 75 / 0.4);
+}
