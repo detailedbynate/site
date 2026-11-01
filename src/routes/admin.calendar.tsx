@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion, type PanInfo } from "motion/react";
 import {
   Ban,
@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Phone,
   Plus,
+  SlidersHorizontal,
   Store,
   X,
 } from "lucide-react";
@@ -150,8 +151,55 @@ function useIsPhone(): boolean {
   return phone;
 }
 
+/**
+ * On a phone the calendar is exactly one screen tall — from where it starts
+ * down to the bottom tab bar — and its body scrolls inside, the way a native
+ * calendar does. It used to be a 1,900px page on an 852px iPhone: header,
+ * then hours, then summaries, all scrolled together.
+ *
+ * Measured rather than hard-coded, because the top bar, the tab bar and the
+ * iPhone home-indicator inset all vary. The negative bottom margin cancels the
+ * padding <main> keeps for the tab bar, which this layout already clears.
+ */
+function useFitToScreen(enabled: boolean) {
+  // A callback ref held in state, not useRef: the stage only mounts after the
+  // loading spinner, and an effect keyed on a plain ref never re-runs when it
+  // finally appears (the same trap as the admin theme — CLAUDE.md #14).
+  const [el, ref] = useState<HTMLElement | null>(null);
+  const [box, setBox] = useState<{ height: number; marginBottom: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setBox(null);
+      return;
+    }
+    const measure = () => {
+      if (!el) return;
+      // offsetTop chain, not getBoundingClientRect: the stage animates in with
+      // a small translate, which would skew a rect read on the first frame.
+      let top = 0;
+      for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) top += n.offsetTop;
+      const nav = document.querySelector<HTMLElement>('nav[aria-label="Quick navigation"]');
+      const navH = nav ? nav.getBoundingClientRect().height : 0;
+      const main = el.closest("main");
+      const pb = main ? parseFloat(getComputedStyle(main).paddingBottom) : 0;
+      const gap = 10;
+      setBox({
+        height: Math.max(440, window.innerHeight - top - navH - gap),
+        marginBottom: -Math.max(0, pb - navH - gap),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [enabled, el]);
+  return { ref, box };
+}
+
 function CalendarPage() {
   const phone = useIsPhone();
+  const fitBox = useFitToScreen(phone);
+  // Phones tuck "Work hours / Full day" and the filter behind a button.
+  const [showTools, setShowTools] = useState(false);
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -364,21 +412,23 @@ function CalendarPage() {
   return (
     <>
       <motion.section
+        ref={fitBox.ref}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="cal-stage -mx-2 sm:mx-0"
+        className={`cal-stage -mx-2 sm:mx-0 ${phone ? "-mt-4 flex flex-col" : ""}`}
+        style={fitBox.box ? { height: fitBox.box.height, marginBottom: fitBox.box.marginBottom } : undefined}
       >
         {/* ------------------------------- head ------------------------------- */}
         <motion.div
           onPanEnd={onSwipe}
           style={{ touchAction: "pan-y" }}
-          className="cal-stage-head relative px-4 pb-6 pt-5 sm:px-7 sm:pt-7"
+          className={`cal-stage-head relative shrink-0 px-4 sm:px-7 sm:pb-6 sm:pt-7 ${phone ? "pb-3 pt-3.5" : "pb-6 pt-5"}`}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[13px] font-medium text-[var(--st-ink-soft)]">{eyebrow}</p>
-              <h1 className="mt-0.5 truncate text-[28px] font-light leading-tight tracking-[-0.02em] text-[var(--st-ink)] sm:text-[36px]">
+              <p className="text-[12px] font-medium text-[var(--st-ink-soft)] sm:text-[13px]">{eyebrow}</p>
+              <h1 className="truncate text-[24px] font-light leading-tight tracking-[-0.02em] text-[var(--st-ink)] sm:mt-0.5 sm:text-[36px]">
                 {title}
               </h1>
             </div>
@@ -394,12 +444,17 @@ function CalendarPage() {
                     transition={{ type: "spring", stiffness: 500, damping: 32 }}
                     whileTap={{ scale: 0.92 }}
                     onClick={() => goTo(now.date)}
-                    className="cal-frost h-11 rounded-full px-4 text-[13px] font-semibold"
+                    className="cal-frost h-10 rounded-full px-3.5 text-[13px] font-semibold sm:h-11 sm:px-4"
                   >
                     Today
                   </motion.button>
                 )}
               </AnimatePresence>
+              {phone && (
+                <RoundButton label="Display options" onClick={() => setShowTools((v) => !v)} active={showTools}>
+                  <SlidersHorizontal className="h-[17px] w-[17px]" />
+                </RoundButton>
+              )}
               <RoundButton label="Previous" onClick={() => step(-1)}>
                 <ChevronLeft className="h-[18px] w-[18px]" />
               </RoundButton>
@@ -410,7 +465,7 @@ function CalendarPage() {
           </div>
 
           {/* Day / Week / Month */}
-          <div role="tablist" className="cal-frost mt-5 grid grid-cols-3 rounded-full p-1">
+          <div role="tablist" className="cal-frost mt-3 grid grid-cols-3 rounded-full p-1 sm:mt-5">
             {(
               [
                 ["day", "Day"],
@@ -426,7 +481,7 @@ function CalendarPage() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setView(v)}
-                  className="relative rounded-full py-2.5 text-[13.5px] font-medium"
+                  className="relative rounded-full py-2 text-[13.5px] font-medium sm:py-2.5"
                 >
                   {active && (
                     <motion.span
@@ -459,8 +514,18 @@ function CalendarPage() {
             />
           )}
 
-          {/* Hours shown + filter */}
-          <div className="mt-4 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-2.5">
+          {/* Hours shown + filter. Always on screen on desktop; behind the
+              sliders button on a phone, where every row costs timeline. */}
+          <AnimatePresence initial={false}>
+          {(!phone || showTools) && (
+          <motion.div
+            initial={phone ? { height: 0, opacity: 0 } : false}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 420, damping: 38 }}
+            className="overflow-hidden"
+          >
+          <div className="mt-3 grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-2.5 sm:mt-4">
             {/* Said in words, not a bare switch: what the timeline shows. */}
             <div className="cal-frost flex items-center gap-1 rounded-full p-1" role="radiogroup" aria-label="Hours shown">
               <Clock className="ml-2 mr-1 h-4 w-4 shrink-0 opacity-70" />
@@ -506,10 +571,18 @@ function CalendarPage() {
               <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 opacity-70" />
             </label>
           </div>
+          </motion.div>
+          )}
+          </AnimatePresence>
         </motion.div>
 
         {/* ------------------------------- body ------------------------------- */}
-        <div className="cal-stage-body relative px-4 pb-5 pt-5 sm:px-7 sm:pb-7">
+        <div
+          data-cal-scroll
+          className={`cal-stage-body relative px-4 sm:px-7 sm:pb-7 sm:pt-5 ${
+            phone ? "min-h-0 flex-1 overflow-y-auto overscroll-contain pb-24 pt-3" : "pb-5 pt-5"
+          }`}
+        >
           {/*
             popLayout: the outgoing view is lifted out of the flow while it
             slides away, so the incoming one takes its place immediately. No
@@ -577,6 +650,7 @@ function CalendarPage() {
           </motion.div>
           </AnimatePresence>
 
+          {!phone && (
           <motion.button
             type="button"
             whileHover={{ scale: 1.01 }}
@@ -590,9 +664,25 @@ function CalendarPage() {
             </span>
             New appointment
           </motion.button>
+          )}
 
           <Legend googleConnected={gcal.connected} />
         </div>
+
+        {/* Phones: a floating + over the timeline, like a native calendar,
+            instead of a full-width button below it that took a screen to reach. */}
+        {phone && (
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setCreating(true)}
+            aria-label="New appointment"
+            style={{ backgroundImage: "var(--gradient-brand)" }}
+            className="absolute bottom-4 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-glow)]"
+          >
+            <Plus className="h-6 w-6" />
+          </motion.button>
+        )}
       </motion.section>
 
       <JobPanel job={openJob} onClose={() => setOpenJob(null)} />
@@ -620,10 +710,12 @@ const slide = {
 function RoundButton({
   label,
   onClick,
+  active = false,
   children,
 }: {
   label: string;
   onClick: () => void;
+  active?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -632,7 +724,10 @@ function RoundButton({
       whileTap={{ scale: 0.9 }}
       onClick={onClick}
       aria-label={label}
-      className="cal-frost flex h-11 w-11 items-center justify-center rounded-full transition-opacity hover:opacity-85"
+      aria-pressed={active || undefined}
+      className={`flex h-10 w-10 items-center justify-center rounded-full transition-opacity hover:opacity-85 sm:h-11 sm:w-11 ${
+        active ? "cal-frost-active" : "cal-frost"
+      }`}
     >
       {children}
     </motion.button>
@@ -656,7 +751,7 @@ function Capsules({
   onPick: (d: string) => void;
 }) {
   return (
-    <div className="mt-4 grid grid-cols-7 gap-1.5 sm:gap-3">
+    <div className="mt-3 grid grid-cols-7 gap-1.5 sm:mt-4 sm:gap-3">
       {days.map((d) => {
         const isSel = d === selected;
         const day = contents.get(d);
@@ -668,7 +763,7 @@ function Capsules({
             type="button"
             whileTap={{ scale: 0.94 }}
             onClick={() => onPick(d)}
-            className={`cal-frost relative flex flex-col items-center rounded-full pb-3 pt-3 sm:pb-3.5 sm:pt-3.5 ${
+            className={`cal-frost relative flex flex-col items-center rounded-full pb-2 pt-2 sm:pb-3.5 sm:pt-3.5 ${
               closed && !isSel ? "opacity-55" : ""
             }`}
           >
@@ -778,9 +873,29 @@ function DayBody({
 
   return (
     <>
+      {/* Phones: the day's numbers in one line, like a native calendar's
+          header — the full cards are further down, past the timeline. */}
+      {phone && (
+        <p className="tnum mb-3 flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
+          <span>
+            <span className="font-semibold text-foreground">{jobs.length}</span> job{jobs.length === 1 ? "" : "s"}
+          </span>
+          <span aria-hidden>·</span>
+          <span className="font-semibold text-foreground">{money(value)}</span>
+          {openMin > 0 && (
+            <>
+              <span aria-hidden>·</span>
+              <span>
+                {duration(bookedMin)} of {duration(openMin)} booked
+              </span>
+            </>
+          )}
+        </p>
+      )}
       <AllDayRow items={day.allDay} />
       {phone ? (
         <DayColumn
+          hourHeight={60}
           items={day.timed}
           hours={hours}
           schedule={schedule}

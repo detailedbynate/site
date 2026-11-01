@@ -201,7 +201,12 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     duration (`calendar/Timeline.tsx`); Week is the same component with a row per day, like a
     dispatch board. **Phones never scroll sideways** — that's what Jobber and Square
     Appointments do: Day is a vertical column with time down the left (`calendar/DayColumn.tsx`)
-    and Week is a day-by-day list. `useIsPhone()` renders one or the other, not both. Swiping the
+    and Week is a day-by-day list. `useIsPhone()` renders one or the other, not both.
+    **On a phone the calendar is exactly one screen** (`useFitToScreen`): the stage is sized from
+    where it starts down to the bottom tab bar, its body scrolls internally (`data-cal-scroll`),
+    `DayColumn` opens it at "now" / the first job / opening time, Work hours + filter sit behind
+    a sliders button, and New appointment is a floating + — the Google/Apple Calendar pattern.
+    Before this the Day view was a 1,924px page on an 852px iPhone 16. Swiping the
     header steps day/week/month; content slides in the direction you moved (`AnimatePresence`
     `popLayout`, so no empty frame between views). Overlapping jobs split into lanes
     (`placeLanes`); time off is a see-through band above jobs, never a lane. Day data for the
