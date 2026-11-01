@@ -61,12 +61,37 @@ function keyBytes(b64url: string): Uint8Array {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
+/**
+ * The admin's worker registration, once its worker is ACTIVE.
+ *
+ * Deliberately not `navigator.serviceWorker.ready`. That promise matches the
+ * registration against the URL the page was first OPENED at, and the Home
+ * Screen app opens at /admin — outside the worker's /admin/ scope. Reaching
+ * Settings by tapping a link doesn't change that, so `ready` never resolved:
+ * "Turn on" asked for permission, then hung forever without subscribing.
+ * That was why notifications never arrived. Waiting on the registration's
+ * own worker works wherever the page was opened.
+ */
 async function registration(): Promise<ServiceWorkerRegistration> {
-  // The admin layout registers the worker on load; this just makes sure.
-  return (
+  const reg =
     (await navigator.serviceWorker.getRegistration("/admin/")) ??
-    (await navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin/" }))
-  );
+    (await navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin/" }));
+  if (reg.active) return reg;
+  const worker = reg.installing ?? reg.waiting;
+  if (!worker) throw new Error("The app's background worker isn't available. Close the app fully and reopen it.");
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("The app's background worker didn't start. Close the app fully and reopen it.")),
+      15000,
+    );
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "activated") {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  });
+  return reg;
 }
 
 export function PushCard() {
@@ -85,6 +110,10 @@ export function PushCard() {
     if (sup === "ok") {
       setPermission(Notification.permission);
       const reg = await navigator.serviceWorker.getRegistration("/admin/").catch(() => undefined);
+      // Make the phone fetch the newest worker now. An app installed before
+      // notifications existed can still be running a worker with no push
+      // handler — it then receives pushes and silently shows nothing.
+      void reg?.update().catch(() => undefined);
       ep = (await reg?.pushManager.getSubscription().catch(() => null))?.endpoint;
     }
     setEndpoint(ep ?? null);
@@ -119,7 +148,6 @@ export function PushCard() {
       setPermission(result);
       if (result !== "granted") throw new Error("Notifications weren't allowed on this device.");
       const reg = await registration();
-      await navigator.serviceWorker.ready;
       const sub =
         (await reg.pushManager.getSubscription()) ??
         (await reg.pushManager.subscribe({
@@ -151,6 +179,44 @@ export function PushCard() {
       flash(
         "Apple/Google accepted it — it should appear within a few seconds. If it doesn't, check Focus / Do Not Disturb and Settings → Notifications for this app.",
       );
+    });
+
+  /*
+    Splits "nothing arrives" in half. This shows a notification straight from
+    the phone — no server, no Apple. If even this doesn't appear, the cause is
+    on the phone (Focus, or Settings → Notifications for the app); if it does
+    and "Send a test" doesn't, the cause is delivery, which the device list
+    below reports.
+  */
+  const localTest = () =>
+    run("local", async () => {
+      const reg = await registration();
+      await reg.showNotification("Test from this phone", {
+        body: "If you can see this, your phone allows notifications from the admin.",
+        tag: "local-test",
+        icon: "/admin/icon",
+      });
+      flash("Shown on this phone. If you didn't see it, check Focus and Settings → Notifications for the app.");
+    });
+
+  /** Throw away this device's subscription and make a fresh one. */
+  const repair = () =>
+    run("repair", async () => {
+      const reg = await registration();
+      await reg.update().catch(() => undefined);
+      const old = await reg.pushManager.getSubscription();
+      if (old) {
+        await unsubscribePush({ data: { endpoint: old.endpoint } }).catch(() => undefined);
+        await old.unsubscribe().catch(() => undefined);
+      }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes(status!.publicKey) as BufferSource,
+      });
+      const json = sub.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
+      await subscribePush({ data: { endpoint: json.endpoint, keys: json.keys, label: deviceLabel() } });
+      await load();
+      flash("Re-registered. Now tap Send a test.");
     });
 
   const toggleEvent = (id: string, on: boolean) =>
@@ -230,6 +296,12 @@ export function PushCard() {
             <div className="flex flex-wrap gap-2">
               <Button variant="primary" loading={busy === "test"} onClick={test}>
                 <Bell className="h-3.5 w-3.5" /> Send a test
+              </Button>
+              <Button loading={busy === "local"} onClick={localTest}>
+                Test this phone only
+              </Button>
+              <Button loading={busy === "repair"} onClick={repair}>
+                Re-register this device
               </Button>
               <Button loading={busy === "off"} onClick={turnOff}>
                 <BellOff className="h-3.5 w-3.5" /> Turn off on this device

@@ -245,7 +245,13 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     The admin's service worker (`pwa.server.ts`) shows every push — iOS revokes permission from a
     site that receives pushes silently — and a tap opens `/admin/calendar?date=…` on that day.
     **iPhone requirement:** iOS 16.4+, and the admin must be added to the Home Screen and opened
-    from there; Safari in a tab has no Push API. `PushCard` (Settings) detects that and shows the
+    from there; Safari in a tab has no Push API.
+    **Never use `navigator.serviceWorker.ready` in the admin.** It matches against the URL the
+    document was first OPENED at; the Home Screen app opens at `/admin`, outside the worker's
+    `/admin/` scope, and client-side navigation doesn't change that — so `ready` never resolved
+    and "Turn on" hung after the permission prompt without ever subscribing (the reason the
+    owner's notifications never arrived). `registration()` in PushCard waits on the worker's own
+    state instead. Also: `ECDH.getPrivateKey()` can return 31 bytes; `vapidAuthorization` pads it. `PushCard` (Settings) detects that and shows the
     three steps instead of a dead button.
 
 29. **Job mode (`/admin/job/$id`) — the on-site flow.** Start it from the job panel in the

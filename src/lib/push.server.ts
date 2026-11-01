@@ -60,11 +60,17 @@ export async function vapidKeys(): Promise<{ publicKey: string; privateKey: stri
 /** A signed VAPID token for one push service origin, valid 12 hours. */
 export function vapidAuthorization(endpoint: string, keys: { publicKey: string; privateKey: string }, subject: string) {
   const pub = unb64url(keys.publicKey);
+  // ECDH.getPrivateKey() drops leading zero bytes, so ~1 key in 256 comes back
+  // 31 bytes long — and a P-256 JWK refuses anything but 32, which would fail
+  // every send forever (the key is stored once). Pad it, as web-push does.
+  // Padding at use, not just at generation, also repairs a key already saved.
+  let d = unb64url(keys.privateKey);
+  if (d.length < 32) d = Buffer.concat([Buffer.alloc(32 - d.length), d]);
   const key = createPrivateKey({
     key: {
       kty: "EC",
       crv: "P-256",
-      d: keys.privateKey,
+      d: b64url(d),
       x: b64url(pub.subarray(1, 33)),
       y: b64url(pub.subarray(33, 65)),
     },
@@ -148,9 +154,11 @@ export type Delivery = { result: "ok" | "gone" | "failed"; detail: string };
  */
 async function deliver(target: Target, message: PushMessage, subject: string): Promise<Delivery> {
   if (!isAllowedEndpoint(target.endpoint)) return { result: "gone", detail: "Unsupported push service" };
-  const keys = await vapidKeys();
-  const body = encryptPayload(Buffer.from(JSON.stringify(message)), target.p256dh, target.auth);
   try {
+    // Inside the try: a malformed device key or signing problem is reported
+    // as this device's error, not thrown past the caller.
+    const keys = await vapidKeys();
+    const body = encryptPayload(Buffer.from(JSON.stringify(message)), target.p256dh, target.auth);
     const res = await fetch(target.endpoint, {
       method: "POST",
       headers: {
