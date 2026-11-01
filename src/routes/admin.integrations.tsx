@@ -98,7 +98,13 @@ function Integrations() {
 
     setBusy("connect");
     completeGoogleConnect({ data: { code } })
-      .then((r) => flash(`Connected${r.email ? ` as ${r.email}` : ""}. Pick a calendar below.`))
+      .then((r) =>
+        flash(
+          `Connected${r.email ? ` as ${r.email}` : ""}.` +
+            (r.synced ? ` Added ${r.synced} missed booking${r.synced === 1 ? "" : "s"} to the calendar.` : "") +
+            " Pick a calendar below.",
+        ),
+      )
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't finish connecting."))
       .finally(async () => {
         window.history.replaceState({}, "", "/admin/integrations");
@@ -209,6 +215,16 @@ function Integrations() {
                 {g.accountEmail || "Connected account"}
               </p>
             </div>
+
+            {/* Shown here too, not only in the first-time steps: reconnecting
+                after a domain change fails with redirect_uri_mismatch, and
+                this is the exact value Google needs to have on file. */}
+            <Field
+              label="Redirect URI"
+              hint="Reconnecting fails with redirect_uri_mismatch unless this exact address is listed under Authorised redirect URIs on your Google OAuth client."
+            >
+              <CopyRow value={g.redirectUri} />
+            </Field>
 
             <Field
               label="Calendar to sync with"

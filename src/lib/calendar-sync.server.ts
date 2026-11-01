@@ -112,3 +112,35 @@ export async function syncBookingToCalendar(bookingId: string): Promise<void> {
     console.error("Calendar sync failed for booking", bookingId, err);
   }
 }
+
+/**
+ * Push every upcoming booking that never made it onto the calendar.
+ *
+ * Calendar work is non-fatal by design, so a booking taken while the Google
+ * connection was down saved fine locally but was never retried — reconnecting
+ * fixed new bookings and silently left the gap. This closes it. Run after a
+ * reconnect or a successful Test connection.
+ *
+ * Returns how many bookings were missing and how many now have an event.
+ */
+export async function syncMissingBookings(): Promise<{ missing: number; synced: number }> {
+  const { listBookings, getSettings } = await import("./db.server");
+  const settings = await getSettings();
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: settings.timezone || "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const missing = (await listBookings()).filter(
+    (b) => b.status !== "cancelled" && !b.googleEventId && b.date >= today,
+  );
+
+  let synced = 0;
+  for (const b of missing) {
+    await syncBookingToCalendar(b.id);
+    if ((await findBookingById(b.id))?.googleEventId) synced++;
+  }
+  return { missing: missing.length, synced };
+}

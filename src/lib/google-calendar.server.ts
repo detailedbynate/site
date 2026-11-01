@@ -26,11 +26,38 @@ export async function isGoogleCalendarConfigured(): Promise<boolean> {
  */
 export function googleMessage(err: unknown): string {
   const e = err as {
-    response?: { data?: { error?: { message?: string; errors?: { reason?: string }[] } } };
+    response?: {
+      data?: {
+        error?: string | { message?: string; errors?: { reason?: string }[] };
+        error_description?: string;
+      };
+    };
     errors?: { message?: string; reason?: string }[];
     message?: string;
   };
-  const api = e?.response?.data?.error;
+
+  /*
+    The token endpoint answers differently from the Calendar API: `error` is a
+    bare string ("invalid_grant") rather than an object. That is the error
+    that matters most — it means the saved refresh token is dead, so EVERY
+    calendar call fails until the owner reconnects — and it used to surface
+    as the cryptic word "invalid_grant", or nothing at all.
+  */
+  const raw = e?.response?.data?.error;
+  if (raw === "invalid_grant" || e?.message === "invalid_grant") {
+    return (
+      "Google access has expired or was revoked (invalid_grant), so nothing is " +
+      "syncing. Click \"Switch Google account\" to reconnect. If this keeps happening " +
+      "about a week after each reconnect, your Google Cloud OAuth app is still in " +
+      "\"Testing\" mode — publish it (OAuth consent screen → Publish app) so tokens stop expiring."
+    );
+  }
+  if (typeof raw === "string") {
+    const desc = e?.response?.data?.error_description;
+    return desc ? `${desc} (${raw})` : raw;
+  }
+
+  const api = raw;
   const reason = api?.errors?.[0]?.reason ?? e?.errors?.[0]?.reason;
   const message = api?.message ?? e?.errors?.[0]?.message ?? e?.message ?? "Unknown error";
   return reason ? `${message} (${reason})` : message;

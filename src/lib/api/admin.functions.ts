@@ -1521,7 +1521,11 @@ export const completeGoogleConnect = createServerFn({ method: "POST" })
     );
 
     await updateSettings({ googleRefreshToken: refreshToken, googleAccountEmail: email });
-    return { email };
+
+    // Anything booked while the connection was dead never reached Google.
+    const { syncMissingBookings } = await import("../calendar-sync.server");
+    const { synced } = await syncMissingBookings();
+    return { email, synced };
   });
 
 export const setGoogleCalendar = createServerFn({ method: "POST" })
@@ -1538,7 +1542,20 @@ export const testGoogleConnection = createServerFn({ method: "POST" }).handler(a
   const { testConnection } = await import("../google-calendar.server");
   const { requireUser } = await import("../auth.server");
   await requireUser();
-  return await testConnection();
+  const result = await testConnection();
+  if (!result.ok) return result;
+
+  // A working connection is the moment to catch up on bookings that were
+  // taken while it was broken.
+  const { syncMissingBookings } = await import("../calendar-sync.server");
+  const { missing, synced } = await syncMissingBookings();
+  if (missing === 0) return result;
+  return {
+    ...result,
+    detail:
+      `${result.detail} Added ${synced} of ${missing} upcoming booking` +
+      `${missing === 1 ? "" : "s"} that were missing from the calendar.`,
+  };
 });
 
 /**
