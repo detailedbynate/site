@@ -35,6 +35,11 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     listFormFields(),
   ]);
 
+  // Closed for this season: every booking left is next year's, so every
+  // price shown is next year's too — no "now vs next season" pair.
+  const closure = await publicClosure(settings);
+  const nextYear = closure.activeNow;
+
   // Coatings are only in the bookable catalog once they're open. While
   // "coming soon" the homepage gets their names and wording, never prices.
   const ceramicMode = settings.ceramicMode ?? "soon";
@@ -65,9 +70,9 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
         id,
         title,
         subtitle,
-        priceValue,
+        priceValue: nextYear && nextPrice != null ? nextPrice : priceValue,
         // Charged for appointments in next season (see packagePrice).
-        nextPrice: nextPrice ?? null,
+        nextPrice: nextYear ? null : (nextPrice ?? null),
         durationMinutes,
         features: features ?? [],
         description: description ?? "",
@@ -84,7 +89,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     travelFee: settings.travelFee,
     formFields: formFields.filter((f) => f.active),
     promo: promoFromSettings(settings),
-    closure: await publicClosure(settings),
+    closure,
     business: {
       name: settings.businessName,
       email: settings.contactEmail,
@@ -635,6 +640,8 @@ export const getHomeSchema = createServerFn({ method: "GET" }).handler(async () 
   });
 
   const packages = services.filter((p) => p.active && !isCoatingService(p.id));
+  // Same rule as getCatalog: while closed, the listed price is next year's.
+  const nextYear = (await publicClosure(s)).activeNow;
   const phone = schemaPhone(s.contactPhone);
   const shownFaqs = faqs.filter((f) => f.active && f.question.trim() && f.answer.trim());
 
@@ -664,7 +671,11 @@ export const getHomeSchema = createServerFn({ method: "GET" }).handler(async () 
         itemListElement: packages.map((p) => ({
           "@type": "Offer",
           itemOffered: { "@type": "Service", name: p.subtitle ? `${p.title}: ${p.subtitle}` : p.title },
-          priceSpecification: { "@type": "PriceSpecification", minPrice: p.priceValue, priceCurrency: "CAD" },
+          priceSpecification: {
+            "@type": "PriceSpecification",
+            minPrice: nextYear && p.nextPrice != null ? p.nextPrice : p.priceValue,
+            priceCurrency: "CAD",
+          },
         })),
       },
     },
