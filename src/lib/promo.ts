@@ -76,3 +76,32 @@ export function packagePrice(
 ): number {
   return isSeasonDate(promo, date) && service.nextPrice != null ? service.nextPrice : service.priceValue;
 }
+
+/**
+ * Closed for the season: public bookings stop for every date before the
+ * reopen date. Next-season dates on or after it stay bookable, and the admin
+ * is never blocked — this only gates what customers can book themselves.
+ */
+export interface Closure {
+  closed: boolean;
+  /** YYYY-MM-DD; "" = closed until switched off. */
+  reopenDate: string;
+  message: string;
+}
+
+export function closureFromSettings(s: {
+  seasonClosed?: boolean;
+  seasonReopenDate?: string;
+  seasonClosedMessage?: string;
+}): Closure {
+  return {
+    closed: Boolean(s.seasonClosed),
+    reopenDate: s.seasonReopenDate ?? "",
+    message: s.seasonClosedMessage ?? "",
+  };
+}
+
+/** Whether customers are kept from booking `date`. */
+export function isClosedDate(closure: Closure | null | undefined, date: string): boolean {
+  return Boolean(closure?.closed && (!closure.reopenDate || date < closure.reopenDate));
+}

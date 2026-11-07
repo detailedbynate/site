@@ -1647,6 +1647,9 @@ export const savePromo = createServerFn({ method: "POST" })
         promoSeasonLabel: z.string().min(1).max(40),
         promoBarText: z.string().max(160),
         promoPopupText: z.string().max(400),
+        seasonClosed: z.boolean(),
+        seasonReopenDate: z.union([dateSchema, z.literal("")]),
+        seasonClosedMessage: z.string().max(300),
       })
       .refine((d) => d.promoSeasonEnd >= d.promoSeasonStart, {
         message: "The season has to end after it starts.",

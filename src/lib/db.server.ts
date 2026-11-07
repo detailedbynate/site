@@ -383,6 +383,17 @@ export interface Settings {
   promoBarText: string;
   promoPopupText: string;
 
+  // --- Closed for the season (see closureFromSettings in lib/promo.ts) ---
+  /**
+   * Stop taking public bookings for the rest of this season. Customers can
+   * still reserve next-season dates; the admin can still book anything.
+   */
+  seasonClosed: boolean;
+  /** YYYY-MM-DD. Dates from here on are bookable again. "" = until turned off. */
+  seasonReopenDate: string;
+  /** Shown to customers on the booking form while closed. */
+  seasonClosedMessage: string;
+
   /**
    * Stripe. Secret key is used server-side only, to create payment links for
    * outstanding balances. The publishable key is safe to expose but isn't
@@ -741,6 +752,11 @@ Notes: {{notes}}`,
   promoBarText: "Now reserving {season} spots — book ahead and save {percent}%.",
   promoPopupText:
     "Lock in any date in the {season} now and we'll take {percent}% off your detail.",
+  // On by default: the owner wrapped up the 2026 season. Lifts by itself on
+  // the reopen date, so nobody has to remember to switch it back in spring.
+  seasonClosed: true,
+  seasonReopenDate: "2027-04-01",
+  seasonClosedMessage: "That's a wrap for this year — thanks for a great season!",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeAccountName: "",

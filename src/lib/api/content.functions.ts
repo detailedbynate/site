@@ -298,6 +298,17 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     if (photoId) serviceImages[serviceId] = `/img/${photoId}`;
   }
 
+  // "Now booking" would be untrue while the season is closed, so the badge
+  // points at next season instead (or just says closed) until it reopens.
+  const { closureFromSettings, isClosedDate, promoFromSettings } = await import("../promo");
+  const { todayInZone } = await import("../availability.server");
+  const promo = promoFromSettings(s);
+  const badge = isClosedDate(closureFromSettings(s), todayInZone(s.timezone))
+    ? promo.enabled
+      ? `Booked out this year — now reserving the ${promo.seasonLabel}`
+      : "Closed for the season"
+    : s.heroBadge;
+
   return {
     url,
     videoUrl: s.heroVideoId ? `/media/${s.heroVideoId}` : null,
@@ -310,7 +321,7 @@ export const getHeroImage = createServerFn({ method: "GET" }).handler(async () =
     statClientsLabel: s.statClientsLabel,
     statVehiclesLabel: s.statVehiclesLabel,
     statRatingLabel: s.statRatingLabel,
-    badge: s.heroBadge,
+    badge,
     pill: s.heroPill,
     reviewTotal: s.reviewTotal ?? 15,
     googleReviewsUrl: s.googleReviewsUrl ?? "",

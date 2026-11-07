@@ -2,7 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { isCoatingService, quote } from "../services";
-import { isSeasonDate, packagePrice, promoFromSettings, seasonDiscount } from "../promo";
+import {
+  closureFromSettings,
+  isClosedDate,
+  isSeasonDate,
+  packagePrice,
+  promoFromSettings,
+  seasonDiscount,
+} from "../promo";
 import { absoluteUrl, formatPhone, siteOrigin } from "../site-url";
 
 // NOTE: everything imported only *inside* a handler below (the .server.ts
@@ -77,6 +84,7 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     travelFee: settings.travelFee,
     formFields: formFields.filter((f) => f.active),
     promo: promoFromSettings(settings),
+    closure: await publicClosure(settings),
     business: {
       name: settings.businessName,
       email: settings.contactEmail,
@@ -85,6 +93,16 @@ export const getCatalog = createServerFn({ method: "GET" }).handler(async () => 
     },
   };
 });
+
+/**
+ * The public view of "closed for the season", plus whether it applies today
+ * (business timezone) — the form uses that to open on next season's dates.
+ */
+async function publicClosure(settings: Parameters<typeof closureFromSettings>[0] & { timezone: string }) {
+  const { todayInZone } = await import("../availability.server");
+  const closure = closureFromSettings(settings);
+  return { ...closure, activeNow: isClosedDate(closure, todayInZone(settings.timezone)) };
+}
 
 /**
  * Resolve a selection against the live catalog and price it. Shared by
@@ -129,7 +147,9 @@ export const getBookableDays = createServerFn({ method: "GET" })
     const { getAvailableDays } = await import("../availability.server");
     const { durationMinutes } = await priceSelection(data.serviceId, data.addOnIds, null);
     if (!data.month) {
-      return { days: await getAvailableDays(durationMinutes, undefined, data.location) };
+      return {
+        days: await getAvailableDays(durationMinutes, undefined, data.location, undefined, true),
+      };
     }
 
     // One month of the promoted season, clipped to the season's own dates.
@@ -143,7 +163,7 @@ export const getBookableDays = createServerFn({ method: "GET" })
     const to = last < promo.seasonEnd ? last : promo.seasonEnd;
     if (from > to) return { days: [] };
     return {
-      days: await getAvailableDays(durationMinutes, undefined, data.location, { from, to }),
+      days: await getAvailableDays(durationMinutes, undefined, data.location, { from, to }, true),
     };
   });
 
@@ -157,7 +177,8 @@ export const getAvailability = createServerFn({ method: "GET" })
     }),
   )
   .handler(async ({ data }) => {
-    const { getAvailableSlots } = await import("../availability.server");
+    const { getAvailableSlots, isClosedForCustomers } = await import("../availability.server");
+    if (await isClosedForCustomers(data.date)) return { slots: [] };
     const { durationMinutes } = await priceSelection(data.serviceId, data.addOnIds, null);
 
     const slots = await getAvailableSlots(data.date, durationMinutes, undefined, data.location);
@@ -299,8 +320,13 @@ export const createBooking = createServerFn({ method: "POST" })
       message: "That's a lot of bookings at once. Please call us and we'll sort the rest out.",
     });
 
-    const { getAvailableSlots } = await import("../availability.server");
+    const { getAvailableSlots, isClosedForCustomers } = await import("../availability.server");
     const { findOrCreateClient, addBooking } = await import("../db.server");
+
+    // Enforced here, not just by greying out the calendar.
+    if (await isClosedForCustomers(data.date)) {
+      throw new Error("We're closed for the rest of the season. Please choose a date next season.");
+    }
     const { createCalendarEvent } = await import("../google-calendar.server");
 
     // Price and duration are recomputed here from the live catalog — the

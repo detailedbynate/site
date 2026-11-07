@@ -142,7 +142,13 @@ export const getManagedBookingDays = createServerFn({ method: "GET" })
     if (!allowed.allowed) return { days: [] };
 
     // Its own slot is excluded from the busy set, same as an admin reschedule.
-    const days = await getAvailableDays(booking.durationMinutes, booking.id, booking.location);
+    const days = await getAvailableDays(
+      booking.durationMinutes,
+      booking.id,
+      booking.location,
+      undefined,
+      true,
+    );
     return { days };
   });
 
@@ -152,10 +158,11 @@ export const getManagedBookingSlots = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }) => {
     const { findBookingByToken } = await import("../db.server");
-    const { getAvailableSlots } = await import("../availability.server");
+    const { getAvailableSlots, isClosedForCustomers } = await import("../availability.server");
 
     const booking = await findBookingByToken(data.token);
     if (!booking) return { slots: [] };
+    if (await isClosedForCustomers(data.date)) return { slots: [] };
 
     const slots = await getAvailableSlots(
       data.date,
@@ -177,11 +184,14 @@ export const rescheduleOwnBooking = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { findBookingByToken, getSettings, rescheduleBooking } = await import("../db.server");
-    const { getAvailableSlots } = await import("../availability.server");
+    const { getAvailableSlots, isClosedForCustomers } = await import("../availability.server");
     const { canReschedule } = await import("../policy");
 
     const booking = await findBookingByToken(data.token);
     if (!booking) throw new Error("We couldn't find that booking.");
+    if (await isClosedForCustomers(data.date)) {
+      throw new Error("We're closed for the rest of the season. Please choose a date next season.");
+    }
 
     const settings = await getSettings();
     // Re-checked here, not just in the UI: the page could have been open for
