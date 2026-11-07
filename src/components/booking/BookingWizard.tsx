@@ -26,7 +26,13 @@ import {
 } from "./CustomerInfoStep";
 import { ConfirmationModal, type ConfirmationDetails } from "./ConfirmationModal";
 import { checkCoupon, createBooking, getCatalog } from "@/lib/api/booking.functions";
-import { isSeasonDate, packagePrice, seasonDiscount, type Promo } from "@/lib/promo";
+import {
+  isSeasonDate,
+  packagePrice,
+  seasonDiscount,
+  type Closure,
+  type Promo,
+} from "@/lib/promo";
 import { isCoatingService } from "@/lib/services";
 import {
   quote,
@@ -56,6 +62,7 @@ type Catalog = {
   travelFee: number;
   formFields: FormFieldDef[];
   promo?: Promo;
+  closure?: Closure & { activeNow: boolean };
 };
 
 const STEPS = ["Service", "Add-ons", "Location", "Date & time", "Your info", "Review"];
@@ -228,9 +235,21 @@ export function BookingWizard({
   const seasonOff = promo && isSeasonDate(promo, date) ? seasonDiscount(promo, total) : 0;
   const payable = Math.max(0, total - seasonOff - (applied?.discount ?? 0));
 
+  // Closed for the rest of this season: only next season's dates are left,
+  // so the date step opens on them. Not when the reopen date comes before
+  // next season starts — then the regular calendar picks it up by itself.
+  const closure = catalog?.closure ?? null;
+  const seasonOver = Boolean(
+    closure?.activeNow &&
+      promo?.enabled &&
+      (!closure.reopenDate || closure.reopenDate >= promo.seasonStart),
+  );
+
   // While next-season reservations run, ceramic coating is only booked for
   // the season — so the date step opens on it and can't switch back.
-  const lockSeason = Boolean(promo?.enabled && service && isCoatingService(service));
+  const lockSeason = Boolean(
+    promo?.enabled && service && (isCoatingService(service) || seasonOver),
+  );
   useEffect(() => {
     if (lockSeason && !season) {
       setSeason(true);
@@ -797,6 +816,7 @@ export function BookingWizard({
                 promo={promo}
                 season={season}
                 lockSeason={lockSeason}
+                closedNote={closure?.activeNow ? closure.message : null}
                 onSeason={(next) => {
                   setSeason(next);
                   setDate(null);

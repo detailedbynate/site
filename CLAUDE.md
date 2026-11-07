@@ -269,6 +269,16 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     Settings card lists every device with its last result, and "Send a test" reports the push
     service's exact reply. Bookings you make yourself only notify with "My own changes too" on.
 
+30. **Closed for the season.** `settings.seasonClosed` + `seasonReopenDate` stop customers
+    booking (or moving their own appointment to) any date before the reopen date; next-season
+    reservations on/after it stay open, and the wizard opens straight on them. Switched on by
+    default for the end of 2026 (reopens 2027-04-01) and lifts by itself on that date. Toggle and
+    message live in Admin → SEO & branding → Season reservations. Enforced server-side in every
+    public path (`getAvailableDays(..., forCustomer=true)`, `isClosedForCustomers()` in
+    `getAvailability`, `createBooking` and the manage-link reschedule); **admin booking and
+    rescheduling deliberately ignore it.** While closed, the homepage hero badge is swapped for
+    a next-season line so it never says "Now booking".
+
 ## File map — everything added/changed this session
 
 ```

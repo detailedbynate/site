@@ -34,6 +34,8 @@ type Props = {
   onSeason?: (season: boolean) => void;
   /** The chosen service can only be booked in the promoted season. */
   lockSeason?: boolean;
+  /** Closed for the rest of this season — the owner's note, when set. */
+  closedNote?: string | null;
 };
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -49,6 +51,7 @@ const reasonLabel: Record<NonNullable<DayAvailability["reason"]>, string> = {
   booked: "Fully booked",
   "lead-time": "Too soon to book",
   "time-off": "Unavailable this day",
+  "season-closed": "Closed for the season",
 };
 
 /** Parse YYYY-MM-DD as a local date (avoids UTC shifting the day back one). */
@@ -140,6 +143,7 @@ export function DateTimeStep({
   season = false,
   onSeason,
   lockSeason = false,
+  closedNote = null,
 }: Props) {
   // The same wizard can be on the page twice (inline on /book and in the
   // overlay); scoping the shared-layout ids keeps their highlights apart.
@@ -311,6 +315,15 @@ export function DateTimeStep({
   return (
     <LayoutGroup id={groupId}>
       <div className="grid gap-5">
+        {closedNote != null && (
+          <div className="glass rounded-2xl px-4 py-3 text-sm">
+            <p className="font-semibold text-foreground">Closed for the rest of this season</p>
+            {closedNote.trim() && (
+              <p className="mt-0.5 text-[13px] text-muted-foreground">{closedNote}</p>
+            )}
+          </div>
+        )}
+
         {promo?.enabled && lockSeason && (
           <div className="glass flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm">
             <span className="font-semibold text-foreground">

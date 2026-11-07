@@ -941,6 +941,9 @@ type PromoDraft = {
   promoSeasonLabel: string;
   promoBarText: string;
   promoPopupText: string;
+  seasonClosed: boolean;
+  seasonReopenDate: string;
+  seasonClosedMessage: string;
 };
 
 /** Next-season reservations: the banner, the popup and the discount. */
@@ -959,6 +962,9 @@ function PromoCard({ onOk, onError }: { onOk: (m: string) => void; onError: (m: 
           promoSeasonLabel: s.promoSeasonLabel,
           promoBarText: s.promoBarText,
           promoPopupText: s.promoPopupText,
+          seasonClosed: s.seasonClosed,
+          seasonReopenDate: s.seasonReopenDate,
+          seasonClosedMessage: s.seasonClosedMessage,
         }),
       )
       .catch(() => undefined);
@@ -990,6 +996,35 @@ function PromoCard({ onOk, onError }: { onOk: (m: string) => void; onError: (m: 
         it's on, a banner runs across the top of the site and a one-time popup shows on the homepage.
         Regular bookings keep working as normal.
       </p>
+
+      <div className="mt-5 rounded-2xl border border-[var(--line-2)] bg-[var(--fill-1)] p-4">
+        <Toggle
+          checked={p.seasonClosed}
+          onChange={(v) => set("seasonClosed", v)}
+          label="Closed for the rest of this season"
+          hint="Customers can't book or move appointments before the reopen date. Next-season reservations stay open, and you can still book anyone yourself."
+        />
+        {p.seasonClosed && (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Reopens on" hint="Bookings open again by themselves from this day.">
+              <input
+                className={inputCls}
+                type="date"
+                value={p.seasonReopenDate}
+                onChange={(e) => set("seasonReopenDate", e.target.value)}
+              />
+            </Field>
+            <Field label="Message on the booking form" hint="Optional.">
+              <input
+                className={inputCls}
+                value={p.seasonClosedMessage}
+                maxLength={300}
+                onChange={(e) => set("seasonClosedMessage", e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+      </div>
 
       <div className="mt-5">
         <Toggle

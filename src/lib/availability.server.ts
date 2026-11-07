@@ -7,7 +7,7 @@ import { getSettings, listBookingsForDate } from "./db.server";
 // getSettings() is the single source; env vars only seed the defaults on
 // first run (see DEFAULT_SETTINGS in db.server.ts).
 
-import { isSeasonDate, promoFromSettings } from "./promo";
+import { closureFromSettings, isClosedDate, isSeasonDate, promoFromSettings } from "./promo";
 
 export interface TimeRange {
   startMinutes: number; // minutes from midnight, local business time
@@ -293,7 +293,13 @@ function dateOfInstant(instant: Date, timeZone: string): string {
   }).format(instant);
 }
 
-export type DayUnavailableReason = "closed" | "booked" | "lead-time" | "time-off";
+export type DayUnavailableReason =
+  | "closed"
+  | "booked"
+  | "lead-time"
+  | "time-off"
+  /** Closed for the rest of the season (Settings → Season reservations). */
+  | "season-closed";
 
 export interface DayAvailability {
   date: string; // YYYY-MM-DD
@@ -303,7 +309,7 @@ export interface DayAvailability {
 }
 
 /** Today's date as YYYY-MM-DD in the business timezone (not the server's). */
-function todayInZone(timeZone: string): string {
+export function todayInZone(timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -340,8 +346,14 @@ export async function getAvailableDays(
   location?: "mobile" | "shop",
   /** An explicit span instead of the rolling window — next season's months. */
   range?: { from: string; to: string },
+  /**
+   * A customer is asking (the booking form, their manage link): honour
+   * "closed for the season". The admin calendar never passes this.
+   */
+  forCustomer = false,
 ): Promise<DayAvailability[]> {
   const cfg = await getSettings();
+  const closure = forCustomer ? closureFromSettings(cfg) : null;
   const today = todayInZone(cfg.timezone);
   // Same cutoff the slot builder uses, so a day greyed out as "too soon"
   // is exactly a day with no slot past the notice cutoff.
@@ -359,7 +371,11 @@ export async function getAvailableDays(
   }
 
   for (const date of dates) {
-
+    // Checked first, so a closed season costs no calendar lookups at all.
+    if (isClosedDate(closure, date)) {
+      days.push({ date, available: false, slotCount: 0, reason: "season-closed" });
+      continue;
+    }
     if (date < earliestDate) {
       days.push({ date, available: false, slotCount: 0, reason: "lead-time" });
       continue;
@@ -441,3 +457,11 @@ export async function getAvailableDays(
   return days;
 }
 
+/**
+ * Whether a customer is kept from booking `date` because the season is
+ * closed. Every public slot lookup and booking write checks this; the admin's
+ * own bookings and reschedules deliberately don't.
+ */
+export async function isClosedForCustomers(date: string): Promise<boolean> {
+  return isClosedDate(closureFromSettings(await getSettings()), date);
+}
