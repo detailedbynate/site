@@ -43,12 +43,15 @@ export function buildBreakdown(
   const lines: BreakdownLine[] = [];
 
   const service = services.find((s) => s.id === booking.serviceId);
-  const servicePrice = service?.priceValue ?? 0;
-  lines.push({
+  const catalogPrice = service?.priceValue ?? 0;
+  // The package line is filled in below, once add-ons and travel are known,
+  // with what this job was actually charged — not today's catalog price.
+  const packageLine: BreakdownLine = {
     label: booking.serviceTitle,
     detail: "Package",
-    amount: servicePrice,
-  });
+    amount: catalogPrice,
+  };
+  lines.push(packageLine);
 
   let addOnTotal = 0;
   booking.addOnIds.forEach((id, i) => {
@@ -65,7 +68,17 @@ export function buildBreakdown(
   const travel = booking.location === "mobile" ? travelFee : 0;
   if (travel) lines.push({ label: "Mobile travel", detail: "Callout", amount: travel });
 
-  const computed = servicePrice + addOnTotal + travel;
+  /*
+    A booking stores its total, not its package price. Read the package
+    price back out of that total, so a job booked before a price change
+    still itemises at what it cost then (the season's prices are switched
+    over every year). Only if that can't be done — add-ons or travel have
+    since gone up past the total — does a separate adjustment line appear.
+  */
+  const asCharged = Math.round((booking.totalPrice - addOnTotal - travel) * 100) / 100;
+  if (asCharged >= 0) packageLine.amount = asCharged;
+
+  const computed = packageLine.amount + addOnTotal + travel;
   const drift = Math.round((booking.totalPrice - computed) * 100) / 100;
   if (drift !== 0) {
     lines.push({

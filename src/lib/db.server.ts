@@ -393,6 +393,12 @@ export interface Settings {
   seasonReopenDate: string;
   /** Shown to customers on the booking form while closed. */
   seasonClosedMessage: string;
+  /**
+   * The reopen date whose next-season prices have already been made the
+   * regular prices — so the switch happens once per closed season, not on
+   * every read. See applyScheduledPrices.
+   */
+  seasonPricesSwitchedFor: string;
 
   /**
    * Stripe. Secret key is used server-side only, to create payment links for
@@ -757,6 +763,7 @@ Notes: {{notes}}`,
   seasonClosed: true,
   seasonReopenDate: "2027-04-01",
   seasonClosedMessage: "That's a wrap for this year — thanks for a great season!",
+  seasonPricesSwitchedFor: "",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY ?? "",
   stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
   stripeAccountName: "",
@@ -2642,14 +2649,35 @@ export async function listBookingsWithClients(): Promise<
  */
 async function applyScheduledPrices(): Promise<void> {
   const s = await getSettings();
-  if (!s.nextPriceDate) return;
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: s.timezone || "America/Toronto",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  if (today < s.nextPriceDate) return;
+
+  /*
+    Closing the season makes next season's prices the regular ones, once.
+    Every booking left is next season's, so keeping "this year's" price on
+    the books only produced "next season it's $X" lines everywhere.
+
+    Safe for past jobs: a booking stores its own total, discount, tip and
+    amount paid, and nothing recalculates those from the catalog.
+  */
+  const closing =
+    s.seasonClosed &&
+    (!s.seasonReopenDate || today < s.seasonReopenDate) &&
+    s.seasonPricesSwitchedFor !== (s.seasonReopenDate || "open-ended");
+  if (closing) {
+    tx(() => {
+      sql(
+        "UPDATE services SET priceValue = nextPrice, nextPrice = NULL WHERE nextPrice IS NOT NULL",
+      ).run();
+      writeSettingsRows({ seasonPricesSwitchedFor: s.seasonReopenDate || "open-ended" });
+    });
+  }
+
+  if (!s.nextPriceDate || today < s.nextPriceDate) return;
   sql("UPDATE services SET priceValue = nextPrice, nextPrice = NULL WHERE nextPrice IS NOT NULL").run();
   await updateSettings({ nextPriceDate: "" });
 }

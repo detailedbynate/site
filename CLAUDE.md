@@ -279,6 +279,13 @@ The ask: a booking system with real Google Calendar sync, plus an admin backend 
     rescheduling deliberately ignore it.** While closed, the homepage hero badge is swapped for
     a next-season line so it never says "Now booking".
 
+    **Closing the season also switches the prices, once.** `applyScheduledPrices()` makes every
+    package's next-season price its regular price the first time it runs while closed, and
+    records the reopen date in `seasonPricesSwitchedFor` so it never repeats for that season.
+    Past jobs are safe: a booking stores its own total, discount, tip and amount paid, and the
+    admin's itemised breakdown now reads the package line back out of the stored total instead
+    of today's catalog price.
+
 ## File map — everything added/changed this session
 
 ```
